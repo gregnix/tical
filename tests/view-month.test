@@ -1,0 +1,18 @@
+package require tcltest
+lappend auto_path [file normalize [file dirname [info script]]/..]
+package require tical::config 1.0
+package require tical::view::month 1.0
+
+namespace import tcltest::*
+
+test view-month-1.1 {42 cells} -body {
+    ::set s [tical::view::month::getData -year 2025 -month 10]
+    llength [dict get $s cells]
+} -result 42
+
+test view-month-1.2 {type is month-grid} -body {
+    ::set s [tical::view::month::getData -year 2025 -month 10]
+    dict get $s type
+} -result "month-grid"
+
+cleanupTests

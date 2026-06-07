@@ -1,0 +1,16 @@
+package require tcltest
+lappend auto_path [file normalize [file dirname [info script]]/..]
+package require tical::core 1.0
+
+namespace import tcltest::*
+
+test core-1.1 {ISO week sanity} -body {
+    ::set d [tical::core::calendarData -year 2025 -month 10]
+    string is integer -strict [dict get [lindex [dict get $d days] 0] week]
+} -result 1
+
+test core-1.2 {leap year} -body {
+    tical::core::isLeap 2024
+} -result 1
+
+cleanupTests

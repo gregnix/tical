@@ -1,0 +1,61 @@
+package require tcltest
+
+set rootDir [file dirname [file dirname [file normalize [info script]]]]
+lappend auto_path $rootDir
+
+package require tical::view::day 1.0
+
+namespace import ::tcltest::*
+
+test day-basic-1 {Day view with date} -body {
+    set spec [tical::view::day::getData -date 2025-10-14]
+    list [dict get $spec type] [dict get $spec date]
+} -result {day-grid 2025-10-14}
+
+test day-hours-24 {Day view has 24 hours by default} -body {
+    set spec [tical::view::day::getData -date 2025-10-14]
+    dict get $spec hours
+} -result 24
+
+test day-cells-24 {Day view has 24 cells} -body {
+    set spec [tical::view::day::getData -date 2025-10-14]
+    llength [dict get $spec cells]
+} -result 24
+
+test day-hour-range {Day view with custom hour range} -body {
+    set spec [tical::view::day::getData -date 2025-10-14 -hourStart 8 -hourEnd 17]
+    dict get $spec hours
+} -result 10
+
+test day-metadata {Day view includes year, month, day, dow, week} -body {
+    set spec [tical::view::day::getData -date 2025-10-14]
+    list \
+        [dict get $spec year] \
+        [dict get $spec month] \
+        [dict get $spec day] \
+        [dict get $spec dow] \
+        [dict get $spec week]
+} -result {2025 10 14 2 42}
+
+test day-first-cell {First cell is hour 0 with time 00:00} -body {
+    set spec [tical::view::day::getData -date 2025-10-14]
+    set cells [dict get $spec cells]
+    set firstCell [lindex $cells 0]
+    list [dict get $firstCell hour] [dict get $firstCell time]
+} -result {0 00:00}
+
+test day-last-cell {Last cell is hour 23 with time 23:00} -body {
+    set spec [tical::view::day::getData -date 2025-10-14]
+    set cells [dict get $spec cells]
+    set lastCell [lindex $cells 23]
+    list [dict get $lastCell hour] [dict get $lastCell time]
+} -result {23 23:00}
+
+test day-validate {Validate correct ViewSpec} -body {
+    set spec [tical::view::day::getData -date 2025-10-14]
+    tical::view::day::validate $spec
+} -result 1
+
+cleanupTests
+
+

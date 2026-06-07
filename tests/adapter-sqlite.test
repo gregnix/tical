@@ -1,0 +1,333 @@
+package require tcltest
+lappend auto_path [file normalize [file dirname [info script]]/..]
+package require tical::adapter::sqlite
+
+namespace import tcltest::*
+
+test sqlite-1.1 {Connect to in-memory database} -body {
+    ::set db [tical::adapter::sqlite::connect ":memory:"]
+    ::set result [expr {$db ne ""}]
+    tical::adapter::sqlite::disconnect $db
+    ::set result
+} -result 1
+
+test sqlite-1.2 {Schema migration creates tables} -body {
+    ::set db [tical::adapter::sqlite::connect ":memory:"]
+    
+    ::set result [catch {
+        $db allrows {SELECT * FROM events LIMIT 0}
+    } err]
+    
+    tical::adapter::sqlite::disconnect $db
+    
+    expr {$result == 0}
+} -result 1
+
+test sqlite-2.1 {Create event with minimal fields} -body {
+    ::set db [tical::adapter::sqlite::connect ":memory:"]
+    
+    ::set event [dict create \
+        starts_at "20251014T090000Z" \
+        summary "Test Meeting"]
+    
+    ::set uid [tical::adapter::sqlite::create $db $event]
+    
+    tical::adapter::sqlite::disconnect $db
+    expr {$uid ne ""}
+} -result 1
+
+test sqlite-2.2 {Create event with all fields} -body {
+    ::set db [tical::adapter::sqlite::connect ":memory:"]
+    
+    ::set event [dict create \
+        uid "test-event-1" \
+        starts_at "20251014T090000Z" \
+        ends_at "20251014T100000Z" \
+        summary "Team Meeting" \
+        description "Weekly standup" \
+        location "Conference Room A" \
+        status "CONFIRMED" \
+        categories [list "Work" "Meeting"] \
+        rrule [dict create freq WEEKLY count 10]]
+    
+    ::set uid [tical::adapter::sqlite::create $db $event]
+    
+    tical::adapter::sqlite::disconnect $db
+    expr {$uid eq "test-event-1"}
+} -result 1
+
+test sqlite-2.3 {Create requires starts_at} -body {
+    ::set db [tical::adapter::sqlite::connect ":memory:"]
+    
+    ::set event [dict create summary "No start time"]
+    
+    catch {tical::adapter::sqlite::create $db $event} msg
+    tical::adapter::sqlite::disconnect $db
+    ::set msg
+} -match glob -result "*starts_at*"
+
+test sqlite-2.4 {Create requires summary} -body {
+    ::set db [tical::adapter::sqlite::connect ":memory:"]
+    
+    ::set event [dict create starts_at "20251014T090000Z"]
+    
+    catch {tical::adapter::sqlite::create $db $event} msg
+    tical::adapter::sqlite::disconnect $db
+    ::set msg
+} -match glob -result "*summary*"
+
+test sqlite-3.1 {Read event by UID} -body {
+    ::set db [tical::adapter::sqlite::connect ":memory:"]
+    
+    ::set event [dict create \
+        uid "read-test-1" \
+        starts_at "20251014T090000Z" \
+        ends_at "20251014T100000Z" \
+        summary "Test Event"]
+    
+    tical::adapter::sqlite::create $db $event
+    
+    ::set retrieved [tical::adapter::sqlite::read $db "read-test-1"]
+    
+    tical::adapter::sqlite::disconnect $db
+    
+    expr {[dict get $retrieved uid] eq "read-test-1" && \
+          [dict get $retrieved summary] eq "Test Event"}
+} -result 1
+
+test sqlite-3.2 {Read non-existent event fails} -body {
+    ::set db [tical::adapter::sqlite::connect ":memory:"]
+    
+    catch {tical::adapter::sqlite::read $db "non-existent"} msg
+    tical::adapter::sqlite::disconnect $db
+    ::set msg
+} -match glob -result "*not found*"
+
+test sqlite-3.3 {Read preserves optional fields} -body {
+    ::set db [tical::adapter::sqlite::connect ":memory:"]
+    
+    ::set event [dict create \
+        uid "optional-test" \
+        starts_at "20251014T090000Z" \
+        summary "Test" \
+        description "With description" \
+        location "Room A"]
+    
+    tical::adapter::sqlite::create $db $event
+    ::set retrieved [tical::adapter::sqlite::read $db "optional-test"]
+    
+    tical::adapter::sqlite::disconnect $db
+    
+    expr {[dict get $retrieved description] eq "With description" && \
+          [dict get $retrieved location] eq "Room A"}
+} -result 1
+
+test sqlite-4.1 {Update event} -body {
+    ::set db [tical::adapter::sqlite::connect ":memory:"]
+    
+    ::set event [dict create \
+        uid "update-test" \
+        starts_at "20251014T090000Z" \
+        summary "Original Title"]
+    
+    tical::adapter::sqlite::create $db $event
+    
+    ::set updated [dict create \
+        starts_at "20251014T100000Z" \
+        summary "Updated Title" \
+        description "New description"]
+    
+    tical::adapter::sqlite::update $db "update-test" $updated
+    
+    ::set retrieved [tical::adapter::sqlite::read $db "update-test"]
+    
+    tical::adapter::sqlite::disconnect $db
+    
+    expr {[dict get $retrieved summary] eq "Updated Title" && \
+          [dict get $retrieved description] eq "New description"}
+} -result 1
+
+test sqlite-4.2 {Update non-existent event fails} -body {
+    ::set db [tical::adapter::sqlite::connect ":memory:"]
+    
+    ::set event [dict create starts_at "20251014T090000Z" summary "Test"]
+    
+    catch {tical::adapter::sqlite::update $db "non-existent" $event} msg
+    tical::adapter::sqlite::disconnect $db
+    ::set msg
+} -match glob -result "*not found*"
+
+test sqlite-5.1 {Delete event} -body {
+    ::set db [tical::adapter::sqlite::connect ":memory:"]
+    
+    ::set event [dict create \
+        uid "delete-test" \
+        starts_at "20251014T090000Z" \
+        summary "To be deleted"]
+    
+    tical::adapter::sqlite::create $db $event
+    
+    ::set deleted [tical::adapter::sqlite::delete $db "delete-test"]
+    
+    ::set eventExists [tical::adapter::sqlite::exists $db "delete-test"]
+    
+    tical::adapter::sqlite::disconnect $db
+    
+    expr {$deleted == 1 && !$eventExists}
+} -result 1
+
+test sqlite-5.2 {Delete non-existent event fails} -body {
+    ::set db [tical::adapter::sqlite::connect ":memory:"]
+    
+    catch {tical::adapter::sqlite::delete $db "non-existent"} msg
+    tical::adapter::sqlite::disconnect $db
+    ::set msg
+} -match glob -result "*not found*"
+
+test sqlite-6.1 {exists returns true for existing event} -body {
+    ::set db [tical::adapter::sqlite::connect ":memory:"]
+    
+    ::set event [dict create \
+        uid "exists-test" \
+        starts_at "20251014T090000Z" \
+        summary "Test"]
+    
+    tical::adapter::sqlite::create $db $event
+    
+    ::set result [tical::adapter::sqlite::exists $db "exists-test"]
+    
+    tical::adapter::sqlite::disconnect $db
+    ::set result
+} -result 1
+
+test sqlite-6.2 {exists returns false for non-existent event} -body {
+    ::set db [tical::adapter::sqlite::connect ":memory:"]
+    
+    ::set result [tical::adapter::sqlite::exists $db "non-existent"]
+    
+    tical::adapter::sqlite::disconnect $db
+    ::set result
+} -result 0
+
+test sqlite-7.1 {listRange returns events in date range} -body {
+    ::set db [tical::adapter::sqlite::connect ":memory:"]
+    
+    tical::adapter::sqlite::create $db [dict create \
+        starts_at "20251010T090000Z" summary "Event 1"]
+    tical::adapter::sqlite::create $db [dict create \
+        starts_at "20251015T090000Z" summary "Event 2"]
+    tical::adapter::sqlite::create $db [dict create \
+        starts_at "20251020T090000Z" summary "Event 3"]
+    
+    ::set events [tical::adapter::sqlite::listRange $db \
+        "20251012T000000Z" "20251018T235959Z"]
+    
+    tical::adapter::sqlite::disconnect $db
+    
+    llength $events
+} -result 1
+
+test sqlite-7.2 {listRange returns empty list if no matches} -body {
+    ::set db [tical::adapter::sqlite::connect ":memory:"]
+    
+    tical::adapter::sqlite::create $db [dict create \
+        starts_at "20251010T090000Z" summary "Event 1"]
+    
+    ::set events [tical::adapter::sqlite::listRange $db \
+        "20251020T000000Z" "20251025T235959Z"]
+    
+    tical::adapter::sqlite::disconnect $db
+    
+    llength $events
+} -result 0
+
+test sqlite-7.3 {listRange orders by starts_at} -body {
+    ::set db [tical::adapter::sqlite::connect ":memory:"]
+    
+    tical::adapter::sqlite::create $db [dict create \
+        starts_at "20251015T090000Z" summary "Event 2"]
+    tical::adapter::sqlite::create $db [dict create \
+        starts_at "20251010T090000Z" summary "Event 1"]
+    tical::adapter::sqlite::create $db [dict create \
+        starts_at "20251020T090000Z" summary "Event 3"]
+    
+    ::set events [tical::adapter::sqlite::listRange $db \
+        "20251001T000000Z" "20251231T235959Z"]
+    
+    tical::adapter::sqlite::disconnect $db
+    
+    expr {[dict get [lindex $events 0] summary] eq "Event 1" && \
+          [dict get [lindex $events 1] summary] eq "Event 2" && \
+          [dict get [lindex $events 2] summary] eq "Event 3"}
+} -result 1
+
+test sqlite-8.1 {listAll returns all events} -body {
+    ::set db [tical::adapter::sqlite::connect ":memory:"]
+    
+    tical::adapter::sqlite::create $db [dict create starts_at "20251010T090000Z" summary "E1"]
+    tical::adapter::sqlite::create $db [dict create starts_at "20251015T090000Z" summary "E2"]
+    tical::adapter::sqlite::create $db [dict create starts_at "20251020T090000Z" summary "E3"]
+    
+    ::set events [tical::adapter::sqlite::listAll $db]
+    
+    tical::adapter::sqlite::disconnect $db
+    
+    llength $events
+} -result 3
+
+test sqlite-9.1 {Serialize and deserialize categories} -body {
+    ::set db [tical::adapter::sqlite::connect ":memory:"]
+    
+    ::set event [dict create \
+        starts_at "20251014T090000Z" \
+        summary "Test" \
+        categories [list "Work" "Meeting" "Important"]]
+    
+    ::set uid [tical::adapter::sqlite::create $db $event]
+    ::set retrieved [tical::adapter::sqlite::read $db $uid]
+    
+    tical::adapter::sqlite::disconnect $db
+    
+    ::set cats [dict get $retrieved categories]
+    expr {[llength $cats] == 3 && \
+          [lindex $cats 0] eq "Work" && \
+          [lindex $cats 2] eq "Important"}
+} -result 1
+
+test sqlite-9.2 {Serialize and deserialize rrule} -body {
+    ::set db [tical::adapter::sqlite::connect ":memory:"]
+    
+    ::set event [dict create \
+        starts_at "20251014T090000Z" \
+        summary "Test" \
+        rrule [dict create freq WEEKLY count 10 interval 2]]
+    
+    ::set uid [tical::adapter::sqlite::create $db $event]
+    ::set retrieved [tical::adapter::sqlite::read $db $uid]
+    
+    tical::adapter::sqlite::disconnect $db
+    
+    ::set rrule [dict get $retrieved rrule]
+    expr {[dict get $rrule freq] eq "WEEKLY" && \
+          [dict get $rrule count] eq "10" && \
+          [dict get $rrule interval] eq "2"}
+} -result 1
+
+test sqlite-10.1 {NULL handling - optional fields not in dict} -body {
+    ::set db [tical::adapter::sqlite::connect ":memory:"]
+    
+    ::set event [dict create \
+        starts_at "20251014T090000Z" \
+        summary "Minimal Event"]
+    
+    ::set uid [tical::adapter::sqlite::create $db $event]
+    ::set retrieved [tical::adapter::sqlite::read $db $uid]
+    
+    tical::adapter::sqlite::disconnect $db
+    
+    expr {![dict exists $retrieved description] && \
+          ![dict exists $retrieved location]}
+} -result 1
+
+cleanupTests
+

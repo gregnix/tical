@@ -1,0 +1,106 @@
+package require tcltest 2
+namespace import tcltest::*
+
+lappend auto_path [file normalize [file dirname [info script]]/..]
+package require tical::config
+package require tical::locale
+
+test locale-1.1 {German month names long} -setup {
+    tical::config::set locale de_DE
+} -body {
+    list [tical::locale::getMonthName 1] \
+         [tical::locale::getMonthName 10] \
+         [tical::locale::getMonthName 12]
+} -result {Januar Oktober Dezember}
+
+test locale-1.2 {German month names short} -setup {
+    tical::config::set locale de_DE
+} -body {
+    list [tical::locale::getMonthName 1 short] \
+         [tical::locale::getMonthName 10 short] \
+         [tical::locale::getMonthName 12 short]
+} -result {Jan Okt Dez}
+
+test locale-1.3 {German weekday names long} -setup {
+    tical::config::set locale de_DE
+} -body {
+    list [tical::locale::getWeekdayName 1] \
+         [tical::locale::getWeekdayName 5] \
+         [tical::locale::getWeekdayName 7]
+} -result {Montag Freitag Sonntag}
+
+test locale-1.4 {German weekday names short} -setup {
+    tical::config::set locale de_DE
+} -body {
+    list [tical::locale::getWeekdayName 1 short] \
+         [tical::locale::getWeekdayName 5 short] \
+         [tical::locale::getWeekdayName 7 short]
+} -result {Mo Fr So}
+
+test locale-2.1 {English month names} -setup {
+    tical::config::set locale en_US
+} -body {
+    list [tical::locale::getMonthName 1] \
+         [tical::locale::getMonthName 10] \
+         [tical::locale::getMonthName 12]
+} -result {January October December}
+
+test locale-2.2 {English weekday names} -setup {
+    tical::config::set locale en_US
+} -body {
+    list [tical::locale::getWeekdayName 1] \
+         [tical::locale::getWeekdayName 5] \
+         [tical::locale::getWeekdayName 7]
+} -result {Monday Friday Sunday}
+
+test locale-3.1 {French month names} -setup {
+    tical::config::set locale fr_FR
+} -body {
+    list [tical::locale::getMonthName 1] \
+         [tical::locale::getMonthName 10] \
+         [tical::locale::getMonthName 12]
+} -result {Janvier Octobre Décembre}
+
+test locale-3.2 {French weekday names} -setup {
+    tical::config::set locale fr_FR
+} -body {
+    list [tical::locale::getWeekdayName 1 short] \
+         [tical::locale::getWeekdayName 5 short] \
+         [tical::locale::getWeekdayName 7 short]
+} -result {Lu Ve Di}
+
+test locale-4.1 {getMonthNames returns list} -setup {
+    tical::config::set locale de_DE
+} -body {
+    llength [tical::locale::getMonthNames]
+} -result 13
+
+test locale-4.2 {getWeekdaysShort returns list} -setup {
+    tical::config::set locale de_DE
+} -body {
+    tical::locale::getWeekdaysShort
+} -result {Mo Di Mi Do Fr Sa So}
+
+test locale-4.3 {getWeekdayNames with format 2} -setup {
+    tical::config::set locale de_DE
+} -body {
+    tical::locale::getWeekdayNames 2
+} -result {Mo Di Mi Do Fr Sa So}
+
+test locale-5.1 {Fallback to English for unknown locale} -setup {
+    tical::config::set locale xx_XX
+} -body {
+    list [tical::locale::getMonthName 1] \
+         [tical::locale::getWeekdayName 1]
+} -result {January Monday}
+
+test locale-6.1 {getSupportedLocales} -body {
+    llength [tical::locale::getSupportedLocales]
+} -result 3
+
+test locale-6.2 {getSupportedLanguages} -body {
+    tical::locale::getSupportedLanguages
+} -result {de en fr}
+
+cleanupTests
+

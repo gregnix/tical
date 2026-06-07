@@ -1,0 +1,14 @@
+package require tcltest
+lappend auto_path [file normalize [file dirname [info script]]/..]
+package require tical::view::month 1.0
+package require tical::render::term 1.0
+
+namespace import tcltest::*
+
+test render-term-1.1 {smoke} -body {
+    ::set s [tical::view::month::getData -year 2025 -month 10]
+    ::set out [tical::render::term::print $s]
+    expr {[string length $out] > 50}
+} -result 1
+
+cleanupTests

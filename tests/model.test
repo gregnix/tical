@@ -1,0 +1,87 @@
+package require tcltest
+
+set rootDir [file dirname [file dirname [file normalize [info script]]]]
+lappend auto_path $rootDir
+
+package require tical::model 1.0
+
+namespace import ::tcltest::*
+
+test model-create-appointment {Create appointment} -body {
+    tical::model::clearAll
+    set id [tical::model::createAppointment -title "Meeting" -date 2025-10-14 -startTime "10:00" -endTime "11:00"]
+    string match "appt-*" $id
+} -result 1
+
+test model-get-appointment {Get appointment} -body {
+    tical::model::clearAll
+    set id [tical::model::createAppointment -title "Meeting" -date 2025-10-14]
+    set appt [tical::model::getAppointment $id]
+    dict get $appt title
+} -result "Meeting"
+
+test model-update-appointment {Update appointment} -body {
+    tical::model::clearAll
+    set id [tical::model::createAppointment -title "Meeting" -date 2025-10-14]
+    tical::model::updateAppointment $id -title "Updated Meeting"
+    set appt [tical::model::getAppointment $id]
+    dict get $appt title
+} -result "Updated Meeting"
+
+test model-delete-appointment {Delete appointment} -body {
+    tical::model::clearAll
+    set id [tical::model::createAppointment -title "Meeting" -date 2025-10-14]
+    tical::model::deleteAppointment $id
+    catch {tical::model::getAppointment $id} err
+    string match "*not found*" $err
+} -result 1
+
+test model-list-appointments {List all appointments} -body {
+    tical::model::clearAll
+    set id1 [tical::model::createAppointment -title "Meeting 1" -date 2025-10-14]
+    set id2 [tical::model::createAppointment -title "Meeting 2" -date 2025-10-15]
+    set list [tical::model::listAppointments]
+    expr {[llength $list] == 4}
+} -result 1
+
+test model-appointments-by-date {Get appointments by date} -body {
+    tical::model::clearAll
+    set id1 [tical::model::createAppointment -title "Meeting 1" -date 2025-10-14]
+    set id2 [tical::model::createAppointment -title "Meeting 2" -date 2025-10-14]
+    set id3 [tical::model::createAppointment -title "Meeting 3" -date 2025-10-15]
+    set list [tical::model::getAppointmentsByDate 2025-10-14]
+    expr {[llength $list] == 4}
+} -result 1
+
+test model-create-event {Create event} -body {
+    tical::model::clearAll
+    set id [tical::model::createEvent -title "Birthday" -date 2025-10-14 -category "personal"]
+    string match "evt-*" $id
+} -result 1
+
+test model-get-event {Get event} -body {
+    tical::model::clearAll
+    set id [tical::model::createEvent -title "Birthday" -date 2025-10-14]
+    set evt [tical::model::getEvent $id]
+    dict get $evt title
+} -result "Birthday"
+
+test model-list-events {List all events} -body {
+    tical::model::clearAll
+    set id1 [tical::model::createEvent -title "Event 1" -date 2025-10-14]
+    set id2 [tical::model::createEvent -title "Event 2" -date 2025-10-15]
+    set list [tical::model::listEvents]
+    expr {[llength $list] == 4}
+} -result 1
+
+test model-clear-all {Clear all appointments and events} -body {
+    tical::model::clearAll
+    set id1 [tical::model::createAppointment -title "Meeting" -date 2025-10-14]
+    set id2 [tical::model::createEvent -title "Event" -date 2025-10-14]
+    tical::model::clearAll
+    expr {[llength [tical::model::listAppointments]] == 0 && [llength [tical::model::listEvents]] == 0}
+} -result 1
+
+cleanupTests
+
+

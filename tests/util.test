@@ -1,0 +1,20 @@
+package require tcltest
+set rootDir [file dirname [file dirname [file normalize [info script]]]]
+lappend auto_path $rootDir
+package require tical::util 1.0
+namespace import ::tcltest::*
+
+test util-daterange-1 {dateRange inclusive count} -body {
+    llength [tical::util::dateRange 2025-10-08 2025-10-10]
+} -result 3
+test util-daterange-2 {dateRange is order-independent} -body {
+    tical::util::dateRange 2025-10-10 2025-10-08
+} -result {2025-10-08 2025-10-09 2025-10-10}
+test util-expand-1 {expandSelection single+range, sorted unique} -body {
+    tical::util::expandSelection {2025-10-20 2025-10-05 2025-10-08..2025-10-09 2025-10-05}
+} -result {2025-10-05 2025-10-08 2025-10-09 2025-10-20}
+test util-expand-2 {expandSelection invalid token -> error} -body {
+    catch {tical::util::expandSelection {2025-1-1}} e
+    set e
+} -match glob -result {invalid selection entry*}
+cleanupTests

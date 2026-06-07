@@ -1,0 +1,201 @@
+package require tcltest
+lappend auto_path [file normalize [file dirname [info script]]/..]
+package require tical::io::ical
+
+namespace import tcltest::*
+
+test export-1.1 {Minimal VEVENT ohne RRULE} -body {
+    ::set event [tical::io::ical::makeEvent \
+        -dtstart "20251014T090000Z" \
+        -dtend "20251014T100000Z" \
+        -summary "Test Meeting"]
+    
+    ::set ics [tical::io::ical::exportEvents [list $event]]
+    
+    ::set checks {}
+    lappend checks [expr {[string match "*BEGIN:VCALENDAR*" $ics]}]
+    lappend checks [expr {[string match "*VERSION:2.0*" $ics]}]
+    lappend checks [expr {[string match "*BEGIN:VEVENT*" $ics]}]
+    lappend checks [expr {[string match "*DTSTART:20251014T090000Z*" $ics]}]
+    lappend checks [expr {[string match "*DTEND:20251014T100000Z*" $ics]}]
+    lappend checks [expr {[string match "*SUMMARY:Test Meeting*" $ics]}]
+    lappend checks [expr {[string match "*END:VEVENT*" $ics]}]
+    lappend checks [expr {[string match "*END:VCALENDAR*" $ics]}]
+    lappend checks [expr {[string match "*\r\n*" $ics]}]
+    
+    expr {[lsearch $checks 0] == -1}
+} -result 1
+
+test export-1.2 {Escaping von Sonderzeichen} -body {
+    ::set event [tical::io::ical::makeEvent \
+        -dtstart "20251014T090000Z" \
+        -dtend "20251014T100000Z" \
+        -summary "Test; Meeting, with\\special\nchars"]
+    
+    ::set ics [tical::io::ical::exportEvents [list $event]]
+    
+    ::set checks {}
+    lappend checks [expr {[string match "*SUMMARY:Test\\\\; Meeting\\\\, with\\\\\\\\special\\\\nchars*" $ics]}]
+    
+    expr {[lsearch $checks 0] == -1}
+} -result 1
+
+test export-1.3 {RRULE FREQ=DAILY mit COUNT} -body {
+    ::set event [tical::io::ical::makeEvent \
+        -dtstart "20251014T090000Z" \
+        -dtend "20251014T100000Z" \
+        -summary "Daily Standup" \
+        -rrule [dict create freq DAILY count 5]]
+    
+    ::set ics [tical::io::ical::exportEvents [list $event]]
+    
+    ::set checks {}
+    lappend checks [expr {[string match "*RRULE:FREQ=DAILY;COUNT=5*" $ics]}]
+    
+    expr {[lsearch $checks 0] == -1}
+} -result 1
+
+test export-1.4 {RRULE FREQ=WEEKLY mit UNTIL} -body {
+    ::set event [tical::io::ical::makeEvent \
+        -dtstart "20251014T090000Z" \
+        -dtend "20251014T100000Z" \
+        -summary "Weekly Review" \
+        -rrule [dict create freq WEEKLY until "20251231T235959Z"]]
+    
+    ::set ics [tical::io::ical::exportEvents [list $event]]
+    
+    ::set checks {}
+    lappend checks [expr {[string match "*RRULE:FREQ=WEEKLY;UNTIL=20251231T235959Z*" $ics]}]
+    
+    expr {[lsearch $checks 0] == -1}
+} -result 1
+
+test export-1.5 {RRULE FREQ=MONTHLY mit INTERVAL} -body {
+    ::set event [tical::io::ical::makeEvent \
+        -dtstart "20251014T090000Z" \
+        -dtend "20251014T100000Z" \
+        -summary "Monthly Report" \
+        -rrule [dict create freq MONTHLY interval 2 count 3]]
+    
+    ::set ics [tical::io::ical::exportEvents [list $event]]
+    
+    ::set checks {}
+    lappend checks [expr {[string match "*RRULE:FREQ=MONTHLY;COUNT=3;INTERVAL=2*" $ics]}]
+    
+    expr {[lsearch $checks 0] == -1}
+} -result 1
+
+test export-1.6 {Validierungsfehler: dtend fehlt} -body {
+    ::set event [tical::io::ical::makeEvent \
+        -dtstart "20251014T100000Z" \
+        -summary "No End Time"]
+    
+    ::set ics [tical::io::ical::exportEvents [list $event]]
+    
+    expr {[string match "*DTSTART:20251014T100000Z*" $ics] && ![string match "*DTEND:*" $ics]}
+} -result 1
+
+test export-1.7 {Mehrere Events} -body {
+    ::set events [list \
+        [tical::io::ical::makeEvent \
+            -dtstart "20251014T090000Z" \
+            -dtend "20251014T100000Z" \
+            -summary "Event 1"] \
+        [tical::io::ical::makeEvent \
+            -dtstart "20251015T140000Z" \
+            -dtend "20251015T150000Z" \
+            -summary "Event 2"]]
+    
+    ::set ics [tical::io::ical::exportEvents $events]
+    
+    ::set count 0
+    foreach line [split $ics "\n"] {
+        if {[string match "*BEGIN:VEVENT*" $line]} {
+            incr count
+        }
+    }
+    
+    ::set count
+} -result 2
+
+test export-1.8 {Optionale Felder: description und location} -body {
+    ::set event [tical::io::ical::makeEvent \
+        -dtstart "20251014T090000Z" \
+        -dtend "20251014T100000Z" \
+        -summary "Meeting" \
+        -description "Important meeting about project X" \
+        -location "Conference Room A"]
+    
+    ::set ics [tical::io::ical::exportEvents [list $event]]
+    
+    ::set checks {}
+    lappend checks [expr {[string match "*DESCRIPTION:Important meeting about project X*" $ics]}]
+    lappend checks [expr {[string match "*LOCATION:Conference Room A*" $ics]}]
+    
+    expr {[lsearch $checks 0] == -1}
+} -result 1
+
+test export-1.9 {RRULE mit BYDAY} -body {
+    ::set event [tical::io::ical::makeEvent \
+        -dtstart "20251014T100000Z" \
+        -dtend "20251014T110000Z" \
+        -summary "Fitness Training" \
+        -rrule [dict create freq WEEKLY byday {MO WE FR} count 12]]
+    
+    ::set ics [tical::io::ical::exportEvents [list $event]]
+    
+    expr {[string match "*RRULE:FREQ=WEEKLY;COUNT=12;BYDAY=MO,WE,FR*" $ics]}
+} -result 1
+
+test export-1.10 {EXDATE - Mehrere Ausnahmen} -body {
+    ::set event [dict create \
+        uid "test@tical" \
+        dtstamp "20251014T120000Z" \
+        dtstart "20251014T090000Z" \
+        dtend "20251014T100000Z" \
+        summary "Daily Meeting" \
+        rrule [dict create freq DAILY count 5] \
+        exdate [list "20251016T090000Z" "20251018T090000Z"]]
+    
+    ::set ics [tical::io::ical::exportEvents [list $event]]
+    
+    ::set checks {}
+    lappend checks [expr {[string match "*EXDATE:20251016T090000Z*" $ics]}]
+    lappend checks [expr {[string match "*EXDATE:20251018T090000Z*" $ics]}]
+    
+    expr {[lsearch $checks 0] == -1}
+} -result 1
+
+test export-1.11 {CATEGORIES und STATUS} -body {
+    ::set event [tical::io::ical::makeEvent \
+        -dtstart "20251014T140000Z" \
+        -dtend "20251014T150000Z" \
+        -summary "Project Review" \
+        -status "CONFIRMED" \
+        -categories [list "Work" "Project"]]
+    
+    ::set ics [tical::io::ical::exportEvents [list $event]]
+    
+    ::set checks {}
+    lappend checks [expr {[string match "*STATUS:CONFIRMED*" $ics]}]
+    lappend checks [expr {[string match "*CATEGORIES:Work,Project*" $ics]}]
+    
+    expr {[lsearch $checks 0] == -1}
+} -result 1
+
+test export-1.12 {makeEvent Convenience-Funktion} -body {
+    ::set event [tical::io::ical::makeEvent \
+        -dtstart "20251014T090000Z" \
+        -summary "Test"]
+    
+    ::set checks {}
+    lappend checks [dict exists $event uid]
+    lappend checks [dict exists $event dtstamp]
+    lappend checks [expr {[dict get $event dtstart] eq "20251014T090000Z"}]
+    lappend checks [expr {[dict get $event summary] eq "Test"}]
+    
+    expr {[lsearch $checks 0] == -1}
+} -result 1
+
+cleanupTests
+

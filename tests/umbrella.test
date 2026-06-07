@@ -1,0 +1,30 @@
+package require tcltest
+set rootDir [file dirname [file dirname [file normalize [info script]]]]
+lappend auto_path $rootDir
+package require tical
+namespace import ::tcltest::*
+
+test umbrella-1 {package require tical reports 1.0} -body {
+    package require tical
+} -result 1.0
+
+test umbrella-2 {Tk-free core components are loaded} -body {
+    set missing {}
+    foreach pkg {tical::util tical::core tical::config tical::locale tical::term
+                 tical::holidays tical::holidays::de tical::model tical::io::ical
+                 tical::view::day tical::view::week tical::view::month
+                 tical::render::term} {
+        if {[catch {package present $pkg}]} { lappend missing $pkg }
+    }
+    set missing
+} -result {}
+
+test umbrella-3 {optional Tk/pdf/sqlite layers are NOT auto-loaded} -body {
+    set loaded {}
+    foreach pkg {tical::render::canvas tical::render::pdf tical::adapter::sqlite} {
+        if {![catch {package present $pkg}]} { lappend loaded $pkg }
+    }
+    set loaded
+} -result {}
+
+cleanupTests

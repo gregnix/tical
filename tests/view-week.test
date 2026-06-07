@@ -1,0 +1,54 @@
+package require tcltest
+
+set rootDir [file dirname [file dirname [file normalize [info script]]]]
+lappend auto_path $rootDir
+
+package require tical::view::week 1.0
+
+namespace import ::tcltest::*
+
+test week-basic-1 {Week view with year and week} -body {
+    set spec [tical::view::week::getData -year 2025 -week 42]
+    list [dict get $spec type] [dict get $spec year] [dict get $spec week]
+} -result {week-grid 2025 42}
+
+test week-cells-count {Week view has 7 cells} -body {
+    set spec [tical::view::week::getData -year 2025 -week 42]
+    llength [dict get $spec cells]
+} -result 7
+
+test week-date-param {Week view with -date parameter} -body {
+    set spec [tical::view::week::getData -date 2025-10-14]
+    list [dict get $spec year] [dict get $spec week]
+} -result {2025 42}
+
+test week-monday-start {Week starts with Monday (dow=1)} -body {
+    set spec [tical::view::week::getData -year 2025 -week 42]
+    set cells [dict get $spec cells]
+    set firstCell [lindex $cells 0]
+    dict get $firstCell dow
+} -result 1
+
+test week-sunday-end {Week ends with Sunday (dow=7)} -body {
+    set spec [tical::view::week::getData -year 2025 -week 42]
+    set cells [dict get $spec cells]
+    set lastCell [lindex $cells 6]
+    dict get $lastCell dow
+} -result 7
+
+test week-week1-2025 {ISO Week 1 of 2025 starts on Dec 30, 2024} -body {
+    set spec [tical::view::week::getData -year 2025 -week 1]
+    set cells [dict get $spec cells]
+    set firstCell [lindex $cells 0]
+    set date [dict get $firstCell date]
+    string match "2024-12-*" $date
+} -result 1
+
+test week-validate {Validate correct ViewSpec} -body {
+    set spec [tical::view::week::getData -year 2025 -week 42]
+    tical::view::week::validate $spec
+} -result 1
+
+cleanupTests
+
+

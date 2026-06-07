@@ -1,0 +1,175 @@
+package require tcltest
+package require Tk
+
+set rootDir [file dirname [file dirname [file normalize [info script]]]]
+lappend auto_path $rootDir
+
+package require tical::view::month
+package require tical::view::week 1.0
+package require tical::render::canvas 1.0
+
+namespace import ::tcltest::*
+
+test canvas-smoke-1 {Canvas renderer doesn't crash} -body {
+    destroy .testc
+    canvas .testc -width 400 -height 300
+    
+    set spec [tical::view::month::getData -year 2025 -month 10]
+    tical::render::canvas::draw .testc $spec
+    
+    destroy .testc
+    return "ok"
+} -result "ok"
+
+test canvas-interactive-1 {Canvas with interactive mode} -body {
+    destroy .testc
+    canvas .testc -width 400 -height 300
+    
+    set spec [tical::view::month::getData -year 2025 -month 10]
+    tical::render::canvas::draw .testc $spec -interactive 1
+    
+    destroy .testc
+    return "ok"
+} -result "ok"
+
+test canvas-weeknumbers-1 {Canvas with week numbers} -body {
+    destroy .testc
+    canvas .testc -width 400 -height 300
+    
+    set spec [tical::view::month::getData -year 2025 -month 10]
+    tical::render::canvas::draw .testc $spec -weekNumbers 1
+    
+    destroy .testc
+    return "ok"
+} -result "ok"
+
+
+test canvas-select-mode {setSelectMode returns the mode} -body {
+    destroy .selc; canvas .selc -width 400 -height 300
+    tical::render::canvas::draw .selc [tical::view::month::getData -year 2025 -month 10] -interactive 1
+    tical::render::canvas::setSelectMode .selc multiple
+} -result multiple
+
+test canvas-select-click {clicks accumulate in multiple mode} -body {
+    destroy .selc; canvas .selc -width 400 -height 300
+    tical::render::canvas::draw .selc [tical::view::month::getData -year 2025 -month 10] -interactive 1
+    tical::render::canvas::setSelectMode .selc multiple
+    tical::render::canvas::onDayClick .selc 2025-10-05 0
+    tical::render::canvas::onDayClick .selc 2025-10-08 0
+    tical::render::canvas::getSelection .selc
+} -result {2025-10-05 2025-10-08}
+
+test canvas-select-toggle {clicking a selected day removes it} -body {
+    destroy .selc; canvas .selc -width 400 -height 300
+    tical::render::canvas::draw .selc [tical::view::month::getData -year 2025 -month 10] -interactive 1
+    tical::render::canvas::setSelectMode .selc multiple
+    tical::render::canvas::onDayClick .selc 2025-10-05 0
+    tical::render::canvas::onDayClick .selc 2025-10-08 0
+    tical::render::canvas::onDayClick .selc 2025-10-05 0
+    tical::render::canvas::getSelection .selc
+} -result {2025-10-08}
+
+test canvas-select-shift {shift-click selects the range from the anchor} -body {
+    destroy .selc; canvas .selc -width 400 -height 300
+    tical::render::canvas::draw .selc [tical::view::month::getData -year 2025 -month 10] -interactive 1
+    tical::render::canvas::setSelectMode .selc multiple
+    tical::render::canvas::onDayClick .selc 2025-10-10 0
+    tical::render::canvas::onDayClick .selc 2025-10-13 1
+    tical::render::canvas::getSelection .selc
+} -result {2025-10-10 2025-10-11 2025-10-12 2025-10-13}
+
+test canvas-select-single {single mode keeps only the last day} -body {
+    destroy .selc; canvas .selc -width 400 -height 300
+    tical::render::canvas::draw .selc [tical::view::month::getData -year 2025 -month 10] -interactive 1
+    tical::render::canvas::setSelectMode .selc single
+    tical::render::canvas::onDayClick .selc 2025-10-05 0
+    tical::render::canvas::onDayClick .selc 2025-10-09 0
+    tical::render::canvas::getSelection .selc
+} -result {2025-10-09}
+
+test canvas-select-setget {setSelection expands ranges; clearSelection empties} -body {
+    destroy .selc; canvas .selc -width 400 -height 300
+    tical::render::canvas::draw .selc [tical::view::month::getData -year 2025 -month 10] -interactive 1
+    tical::render::canvas::setSelectMode .selc multiple
+    tical::render::canvas::setSelection .selc {2025-10-08..2025-10-10 2025-10-20}
+    set a [tical::render::canvas::getSelection .selc]
+    tical::render::canvas::clearSelection .selc
+    list $a [tical::render::canvas::getSelection .selc]
+} -result {{2025-10-08 2025-10-09 2025-10-10 2025-10-20} {}}
+
+test canvas-select-command {-command fires with the current selection} -body {
+    destroy .selc; canvas .selc -width 400 -height 300
+    tical::render::canvas::draw .selc [tical::view::month::getData -year 2025 -month 10] -interactive 1
+    tical::render::canvas::setSelectMode .selc multiple
+    set ::seen {}
+    tical::render::canvas::setSelectionCommand .selc {apply {{w sel} {set ::seen $sel}}}
+    tical::render::canvas::onDayClick .selc 2025-10-07 0
+    set ::seen
+} -result 2025-10-07
+
+test canvas-select-highlight {a selected day creates one seloverlay item} -body {
+    destroy .selc; canvas .selc -width 400 -height 300
+    tical::render::canvas::draw .selc [tical::view::month::getData -year 2025 -month 10] -interactive 1
+    tical::render::canvas::setSelectMode .selc multiple
+    tical::render::canvas::onDayClick .selc 2025-10-07 0
+    llength [.selc find withtag seloverlay]
+} -result 1
+
+test canvas-select-mode-none {mode none keeps legacy behaviour (no selection)} -body {
+    destroy .selc; canvas .selc -width 400 -height 300
+    tical::render::canvas::draw .selc [tical::view::month::getData -year 2025 -month 10] -interactive 1
+    tical::render::canvas::onDayClick .selc 2025-10-07 0
+    tical::render::canvas::getSelection .selc
+} -result {}
+
+
+test canvas-week-1 {week view: multi-select with Shift range} -body {
+    destroy .wkc; canvas .wkc -width 520 -height 200
+    tical::render::canvas::draw .wkc [tical::view::week::getData -date 2025-10-08] -interactive 1
+    tical::render::canvas::setSelectMode .wkc multiple
+    tical::render::canvas::onDayClick .wkc 2025-10-07 0
+    tical::render::canvas::onDayClick .wkc 2025-10-09 1
+    tical::render::canvas::getSelection .wkc
+} -result {2025-10-07 2025-10-08 2025-10-09}
+
+test canvas-week-2 {week view: selection draws overlay items} -body {
+    llength [.wkc find withtag seloverlay]
+} -result 3
+
+test canvas-week-3 {week view: selection survives a redraw} -body {
+    tical::render::canvas::draw .wkc [tical::view::week::getData -date 2025-10-08] -interactive 1
+    list [tical::render::canvas::getSelection .wkc] [llength [.wkc find withtag seloverlay]]
+} -result {{2025-10-07 2025-10-08 2025-10-09} 3}
+
+
+test canvas-hover-restore {hover leave restores the cell's original outline} -body {
+    destroy .hc; canvas .hc -width 400 -height 300
+    tical::render::canvas::draw .hc [tical::view::month::getData -year 2025 -month 10] -interactive 1
+    set before [.hc itemcget rect-2025-10-15 -outline]
+    tical::render::canvas::onDayEnter .hc 2025-10-15
+    tical::render::canvas::onDayLeave .hc 2025-10-15
+    list $before [.hc itemcget rect-2025-10-15 -outline]
+} -result {gray80 gray80}
+
+test canvas-deselect-outline {deselect + leave keeps the original outline, no overlay} -body {
+    destroy .hc; canvas .hc -width 400 -height 300
+    tical::render::canvas::draw .hc [tical::view::month::getData -year 2025 -month 10] -interactive 1
+    tical::render::canvas::setSelectMode .hc multiple
+    tical::render::canvas::onDayEnter .hc 2025-10-15
+    tical::render::canvas::onDayClick .hc 2025-10-15 0
+    tical::render::canvas::onDayClick .hc 2025-10-15 0
+    tical::render::canvas::onDayLeave .hc 2025-10-15
+    list [.hc itemcget rect-2025-10-15 -outline] [llength [.hc find withtag sel-2025-10-15]]
+} -result {gray80 0}
+
+test canvas-clear-outline {clearSelection leaves all cells with their outline} -body {
+    destroy .hc; canvas .hc -width 400 -height 300
+    tical::render::canvas::draw .hc [tical::view::month::getData -year 2025 -month 10] -interactive 1
+    tical::render::canvas::setSelectMode .hc multiple
+    tical::render::canvas::setSelection .hc {2025-10-15 2025-10-16}
+    tical::render::canvas::clearSelection .hc
+    list [.hc itemcget rect-2025-10-15 -outline] [llength [.hc find withtag seloverlay]]
+} -result {gray80 0}
+
+cleanupTests
+

@@ -1,0 +1,48 @@
+package require tcltest
+
+set rootDir [file dirname [file dirname [file normalize [info script]]]]
+lappend auto_path $rootDir
+
+package require tical::holidays 1.0
+package require tical::holidays::de 1.0
+
+namespace import ::tcltest::*
+
+test holidays-de-neujahr {Deutsche Feiertage: Neujahr} -body {
+    set holidays [tical::holidays::getHolidays DE 2025 1]
+    dict exists $holidays 1
+} -result 1
+
+test holidays-de-tagderarbeit {Deutsche Feiertage: Tag der Arbeit} -body {
+    set holidays [tical::holidays::getHolidays DE 2025 5]
+    dict exists $holidays 1
+} -result 1
+
+test holidays-de-einheit {Deutsche Feiertage: Tag der Deutschen Einheit} -body {
+    set holidays [tical::holidays::getHolidays DE 2025 10]
+    expr {[dict exists $holidays 3] && [dict get $holidays 3] eq "Tag der Deutschen Einheit"}
+} -result 1
+
+test holidays-de-weihnachten {Deutsche Feiertage: Weihnachten} -body {
+    set holidays [tical::holidays::getHolidays DE 2025 12]
+    expr {[dict exists $holidays 25] && [dict exists $holidays 26]}
+} -result 1
+
+test holidays-de-ostern {Deutsche Feiertage: Ostermontag 2025} -body {
+    set holidays [tical::holidays::getHolidays DE 2025 4]
+    dict exists $holidays 21
+} -result 1
+
+test holidays-empty-month {Keine Feiertage im Monat} -body {
+    set holidays [tical::holidays::getHolidays DE 2025 2]
+    llength [dict keys $holidays]
+} -result 0
+
+test holidays-markers {Markers Format} -body {
+    set markers [tical::holidays::getMarkers DE 2025 10]
+    expr {[llength $markers] > 0}
+} -result 1
+
+cleanupTests
+
+
