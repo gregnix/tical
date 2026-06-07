@@ -1,7 +1,7 @@
 # tical - Tcl Calendar Library
 
 **Version:** 1.0  
-**Status:** Stable  
+**Status:** In Development  
 **Requires:** Tcl 8.6+, Tk 8.6+ (for Canvas GUI), pdf4tcl (for PDF)
 
 A modular calendar library for Tcl with support for multiple views, rendering targets, and iCalendar export.
@@ -10,7 +10,7 @@ A modular calendar library for Tcl with support for multiple views, rendering ta
 
 ## Features
 
-### Implemented (Phase 1 + 2 + 3 + 4)
+### Implemented 
 
 ✅ **Modular Architecture** - Separate data, view, and rendering layers  
 ✅ **Month View** - 42-cell grid (6 rows × 7 columns) with adjacent days  
@@ -162,34 +162,29 @@ set tz [tical::config::get timezone]
 
 ## Modules
 
-### Core ✅ (Phase 1)
+### Core ✅ 
 - `tical::core` - Calendar calculations (ISO weeks, leap years)
 - `tical::util` - Helpers (mm2pt, defaults, markers)
 - `tical::config` - Global settings (timezone, locale, theme)
 - `tical::term` - VT100 terminal styling
 - `tical::holidays` - Holiday plugin system
 
-### Views ✅ (Phase 1 + 3)
+### Views ✅ 
 - `tical::view::month` - Month grid (6×7 = 42 cells)
 - `tical::view::week` - Week grid (1×7 = 7 days)
 - `tical::view::day` - Day grid (24 hours, customizable)
 
-### Renderers ✅ (Phase 1 + 2)
+### Renderers ✅ 
 - `tical::render::term` - ASCII/Unicode terminal output
 - `tical::render::canvas` - Tk Canvas GUI (interactive)
 
-### Model ✅ (Phase 3)
+### Model ✅ 
 - `tical::model` - Appointments and Events (CRUD operations)
 
-### Holidays ✅ (Phase 3)
+### Holidays ✅ 
 - `tical::holidays::de` - German holidays (9+ holidays, Easter calculation)
 
-### Planned (Phase 4)
-- `tical::holidays::at` - Austrian holidays
-- `tical::holidays::ch` - Swiss holidays
-- `tical::adapter::sqlite` - Database persistence (TDBC)
-- `tical::io::ical` - iCalendar import/export (RFC 5545)
-- `tical::render::pdf` - PDF output (pdf4tcl)
+
 
 ---
 
