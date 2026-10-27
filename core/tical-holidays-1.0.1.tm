@@ -1,4 +1,4 @@
-package provide tical::holidays 1.0
+package provide tical::holidays 1.0.1
 package require Tcl 8.6-
 
 namespace eval ::tical::holidays {
@@ -7,14 +7,16 @@ namespace eval ::tical::holidays {
     array set plugins {}
 }
 
+# Region keys are case-insensitive: DE, de and De name the same plugin.
 proc ::tical::holidays::register {country proc} {
     variable plugins
-    set plugins($country) $proc
+    set plugins([string toupper $country]) $proc
 }
 
 proc ::tical::holidays::getHolidays {country year month} {
     variable plugins
-    
+    set country [string toupper $country]
+
     if {![info exists plugins($country)]} {
         return {}
     }

@@ -93,7 +93,24 @@ test pdf-1.10 {PDF invalid ViewSpec type} -body {
     set spec [dict create type "invalid-type"]
     set outfile [file join $tmpDir test-invalid.pdf]
     tical::render::pdf::create $outfile $spec
-} -returnCodes error -match glob -result {Unknown ViewSpec type: invalid-type}
+} -returnCodes error -match glob -result {render::pdf::create: expected type *, got "invalid-type"}
+
+test pdf-1.13 {invalid type: stable errorcode} -body {
+    catch {tical::render::pdf::create [file join $tmpDir x.pdf] {type nix}} m opt
+    dict get $opt -errorcode
+} -result {TICAL RENDER TYPE}
+
+test pdf-1.14 {month with Sunday week start and en_US locale} -setup {
+    set old [tical::config::get locale]
+    tical::config::set locale en_US
+} -body {
+    set spec [tical::view::month::getData -year 2025 -month 10 -weekStart sun]
+    set outfile [file join $tmpDir test-sun.pdf]
+    tical::render::pdf::create $outfile $spec
+    file exists $outfile
+} -cleanup {
+    tical::config::set locale $old
+} -result 1
 
 test pdf-1.11 {PDF month without week numbers} -body {
     set spec [tical::view::month::getData -year 2025 -month 10]
@@ -108,6 +125,50 @@ test pdf-1.12 {PDF month without grid lines} -body {
     set result [tical::render::pdf::create $outfile $spec -showGrid 0]
     file exists $outfile
 } -result {1}
+
+
+test pdf-2.1 {unknown option: error with the known options} -body {
+    set spec [tical::view::month::getData -year 2025 -month 10]
+    catch {tical::render::pdf::create [file join $tmpDir x.pdf] $spec -weeknumbers 0} m opt
+    list [string match {render::pdf::create: unknown option "-weeknumbers", must be -colorEvent, *} $m] \
+         [dict get $opt -errorcode]
+} -result {1 {TICAL RENDER OPTION}}
+
+test pdf-2.2 {paper in any case (Letter), bad paper is an error} -body {
+    set spec [tical::view::month::getData -year 2025 -month 10]
+    set f [tical::render::pdf::create [file join $tmpDir letter2.pdf] $spec -paper Letter]
+    catch {tical::render::pdf::create [file join $tmpDir x.pdf] $spec -paper b5} m opt
+    list [file exists $f] $m [dict get $opt -errorcode]
+} -result {1 {render::pdf::create: bad paper "b5": must be a3, a4, a5 or letter} {TICAL RENDER OPTION}}
+
+test pdf-2.3 {bad orientation} -body {
+    set spec [tical::view::month::getData -year 2025 -month 10]
+    catch {tical::render::pdf::createYear [file join $tmpDir x.pdf] [list $spec] -orientation quer} m opt
+    list $m [dict get $opt -errorcode]
+} -result {{render::pdf::createYear: bad orientation "quer": must be portrait or landscape} {TICAL RENDER OPTION}}
+
+test pdf-3.1 {month, week, day with events from the view} -body {
+    set ev {
+        {summary {Team Meeting} dtstart 2025-10-14T09:00 dtend 2025-10-14T10:00}
+        {summary Messe dtstart 2025-10-15 dtend 2025-10-18}
+    }
+    set r {}
+    foreach {name spec} [list \
+            m [tical::view::month::getData -year 2025 -month 10 -events $ev] \
+            w [tical::view::week::getData -date 2025-10-14 -events $ev] \
+            d [tical::view::day::getData -date 2025-10-14 -events $ev]] {
+        lappend r [file exists [tical::render::pdf::create [file join $tmpDir ev-$name.pdf] $spec]]
+    }
+    lappend r [file exists [tical::render::pdf::createYear [file join $tmpDir ev-y.pdf] \
+        [tical::view::month::getData -year 2025 -month 1 -count 12 -events $ev]]]
+    set r
+} -result {1 1 1 1}
+
+test pdf-3.2 {option events (list of dates, form of 1.0.1) still accepted} -body {
+    set spec [tical::view::month::getData -year 2025 -month 10]
+    file exists [tical::render::pdf::create [file join $tmpDir ev-old.pdf] $spec \
+        -events {2025-10-14 2025-10-20}]
+} -result 1
 
 cleanupTest
 

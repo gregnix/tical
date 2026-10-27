@@ -1,0 +1,121 @@
+package require tcltest
+lappend auto_path [file normalize [file dirname [info script]]/..]
+package require tical::event 1.1
+package require tical::config 1.0
+
+namespace import tcltest::*
+
+proc pick {ev args} { lmap k $args {expr {[dict exists $ev $k] ? [dict get $ev $k] : "-"}} }
+
+test event-1.1 {normalizeValue: ISO and basic forms} -body {
+    lmap v {2025-10-14 20251014 2025-10-14T09:00 {2025-10-14 09:00:30} 2025-10-14T09:00Z 20251014T090000Z} {
+        tical::event::normalizeValue $v
+    }
+} -result {20251014 20251014 20251014T090000 20251014T090030 20251014T090000Z 20251014T090000Z}
+
+test event-1.2 {normalizeValue: invalid value, errorcode} -body {
+    catch {tical::event::normalizeValue 14.10.2025 dtstart} m opt
+    list [string match {dtstart format invalid: "14.10.2025"*} $m] [dict get $opt -errorcode]
+} -result {1 {TICAL EVENT FORMAT}}
+
+test event-1.3 {normalizeValue: no such day} -body {
+    catch {tical::event::normalizeValue 2025-02-30} m opt
+    list $m [dict get $opt -errorcode]
+} -result {{value is not a valid date or time: "2025-02-30"} {TICAL EVENT FORMAT}}
+
+test event-2.1 {normalize: timed event} -body {
+    pick [tical::event::normalize {summary M dtstart 2025-10-14T09:00 dtend 2025-10-14T10:00}] \
+        summary dtstart dtend allday
+} -result {M 20251014T090000 20251014T100000 0}
+
+test event-2.2 {normalize: date value is all-day} -body {
+    pick [tical::event::normalize {summary F dtstart 2025-10-20 dtend 2025-10-23}] dtstart dtend allday
+} -result {20251020 20251023 1}
+
+test event-2.3 {normalize: allday 1 cuts date-times to dates, dtend exclusive} -body {
+    pick [tical::event::normalize {summary F dtstart 20251020T080000 dtend 20251022T170000 allday 1}] \
+        dtstart dtend allday
+} -result {20251020 20251023 1}
+
+test event-2.4 {normalize: tical::model names of 1.0.1 (title/date/startTime/endTime)} -body {
+    pick [tical::event::normalize {id appt-1 title Meeting date 2025-10-14 startTime 9:00 endTime 10:30}] \
+        uid summary dtstart dtend allday title date
+} -result {appt-1 Meeting 20251014T090000 20251014T103000 0 - -}
+
+test event-2.5 {normalize: tical::model event of 1.0.1 (allDay, category)} -body {
+    pick [tical::event::normalize {title Geburtstag date 2025-10-14 allDay 1 category privat}] \
+        summary dtstart allday categories
+} -result {Geburtstag 20251014 1 privat}
+
+test event-2.6 {normalize: adapter::sqlite names of 1.0.1 (starts_at/ends_at)} -body {
+    pick [tical::event::normalize {summary S starts_at 20251014T090000Z ends_at 20251014T100000Z}] \
+        dtstart dtend starts_at
+} -result {20251014T090000Z 20251014T100000Z -}
+
+test event-2.7 {normalize: rrule string becomes a dict} -body {
+    dict get [tical::event::normalize {summary R dtstart 20251014 rrule FREQ=WEEKLY;BYDAY=MO,WE;COUNT=4}] rrule
+} -result {freq WEEKLY byday {MO WE} count 4}
+
+test event-2.8 {normalize: other keys are kept} -body {
+    pick [tical::event::normalize {summary S dtstart 20251014 color red}] color
+} -result red
+
+test event-3.1 {validate: missing summary} -body {
+    catch {tical::event::normalize {dtstart 20251014}} m opt
+    list $m [dict get $opt -errorcode]
+} -result {{event missing required field: summary} {TICAL EVENT FIELD}}
+
+test event-3.2 {validate: dtend before dtstart} -body {
+    catch {tical::event::normalize {summary S dtstart 20251014T100000 dtend 20251014T090000}} m opt
+    list $m [dict get $opt -errorcode]
+} -result {{dtend "20251014T090000" is before dtstart "20251014T100000"} {TICAL EVENT RANGE}}
+
+test event-3.3 {validate: date and date-time mixed} -body {
+    catch {tical::event::validate {summary S dtstart 20251014 dtend 20251015T090000}} m opt
+    list $m [dict get $opt -errorcode]
+} -result {{dtstart and dtend must both be dates or both date-times} {TICAL EVENT FORMAT}}
+
+test event-3.4 {validate: rrule freq} -body {
+    catch {tical::event::validate {summary S dtstart 20251014 rrule {freq HOURLY}}} m opt
+    list $m [dict get $opt -errorcode]
+} -result {{rrule freq must be DAILY, WEEKLY, MONTHLY or YEARLY, got "HOURLY"} {TICAL EVENT RRULE}}
+
+test event-3.5 {validate: ISO value is not the basic form} -body {
+    catch {tical::event::validate {summary S dtstart 2025-10-14}} m opt
+    dict get $opt -errorcode
+} -result {TICAL EVENT FORMAT}
+
+test event-4.1 {days: all-day dtend is exclusive} -body {
+    tical::event::days [tical::event::normalize {summary F dtstart 20251020 dtend 20251023}] UTC
+} -result {2025-10-20 2025-10-21 2025-10-22}
+
+test event-4.2 {days: timed event ending at midnight stays on its day} -body {
+    tical::event::days [tical::event::normalize {summary N dtstart 20251030T220000 dtend 20251031T000000}] UTC
+} -result {2025-10-30}
+
+test event-4.3 {days: UTC time in the local time zone} -body {
+    tical::event::days [tical::event::normalize {summary U dtstart 20251014T230000Z}] Europe/Berlin
+} -result {2025-10-15}
+
+test event-4.4 {toLocal} -body {
+    list [tical::event::toLocal 20251014T070000Z Europe/Berlin] [tical::event::toLocal 20251014 Europe/Berlin]
+} -result {{2025-10-14 09:00} {2025-10-14 {}}}
+
+test event-5.1 {distribute: parts and times, all-day first} -body {
+    ::set cells [lmap d {2025-10-20 2025-10-21 2025-10-22 2025-10-23} {dict create date $d events {}}]
+    ::set cells [tical::event::distribute $cells {
+        {summary Messe dtstart 20251020 dtend 20251023}
+        {summary Call dtstart 2025-10-20T09:00}
+    } UTC]
+    lmap c $cells {lmap e [dict get $c events] {list [dict get $e summary] [dict get $e part] [dict get $e time]}}
+} -result {{{Messe start {}} {Call single 09:00}} {{Messe middle {}}} {{Messe end {}}} {}}
+
+test event-5.2 {distribute: cells without date are left alone} -body {
+    tical::event::distribute [list [dict create date {} events {}]] {{summary X dtstart 20251020}} UTC
+} -result {{date {} events {}}}
+
+test event-6.1 {rruleString} -body {
+    tical::event::rruleString {freq weekly byday {MO WE} count 4}
+} -result {FREQ=WEEKLY;BYDAY=MO,WE;COUNT=4}
+
+cleanupTests

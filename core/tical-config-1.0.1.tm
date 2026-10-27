@@ -1,4 +1,4 @@
-package provide tical::config 1.0
+package provide tical::config 1.0.1
 package require Tcl 8.6-
 
 namespace eval tical::config {
@@ -23,7 +23,9 @@ proc tical::config::set {key value} {
 
 proc tical::config::get {key} {
     variable _cfg
-    if {![info exists _cfg($key)]} { error "unknown key: $key" }
+    if {![info exists _cfg($key)]} {
+        return -code error -errorcode {TICAL CONFIG KEY} "unknown key: $key"
+    }
     return $_cfg($key)
 }
 

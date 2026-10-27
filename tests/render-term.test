@@ -1,14 +1,176 @@
 package require tcltest
 lappend auto_path [file normalize [file dirname [info script]]/..]
-package require tical::view::month 1.0
-package require tical::render::term 1.0
+package require tical::view::month 1.1
+package require tical::render::term 1.1
+package require tical::view::week 1.1
 
 namespace import tcltest::*
+
+# mark cell i of a month ViewSpec as today
+proc markToday {s i} {
+    ::set cells [dict get $s cells]
+    ::set c [lindex $cells $i]
+    dict lappend c markers today
+    lset cells $i $c
+    dict set s cells $cells
+    return $s
+}
 
 test render-term-1.1 {smoke} -body {
     ::set s [tical::view::month::getData -year 2025 -month 10]
     ::set out [tical::render::term::print $s]
     expr {[string length $out] > 50}
 } -result 1
+
+test render-term-2.1 {header follows tical::config locale (de_DE)} -setup {
+    ::set old [tical::config::get locale]
+    tical::config::set locale de_DE
+} -body {
+    ::set s [tical::view::month::getData -year 2025 -month 10]
+    lrange [split [tical::render::term::print $s -weekNumbers 1] \n] 0 2
+} -cleanup {
+    tical::config::set locale $old
+} -result {{ Oktober 2025} { KW  Mo  Di  Mi  Do  Fr  Sa  So} { 40  ..  ..   1   2   3   4   5}}
+
+test render-term-2.2 {header follows tical::config locale (en_US)} -setup {
+    ::set old [tical::config::get locale]
+    tical::config::set locale en_US
+} -body {
+    ::set s [tical::view::month::getData -year 2025 -month 10]
+    lrange [split [tical::render::term::print $s] \n] 0 1
+} -cleanup {
+    tical::config::set locale $old
+} -result {{ October 2025} { Mo  Tu  We  Th  Fr  Sa  Su}}
+
+test render-term-2.3 {six week rows} -body {
+    ::set s [tical::view::month::getData -year 2025 -month 10]
+    llength [lrange [split [string trimright [tical::render::term::print $s] \n] \n] 2 end]
+} -result 6
+
+test render-term-2.4 {columns four characters wide: header, week column and days line up} -body {
+    ::set s [tical::view::month::getData -year 2025 -month 10]
+    ::set lines [split [tical::render::term::print $s -weekNumbers 1] \n]
+    ::set head [lindex $lines 1]
+    ::set row  [lindex $lines 4]
+    # column k: characters 4k+1 .. 4k+2 hold the label / the day number
+    ::set r {}
+    foreach k {0 1 7} {
+        lappend r [string range $head [expr {4*$k+1}] [expr {4*$k+2}]] \
+                  [string range $row  [expr {4*$k+1}] [expr {4*$k+2}]]
+    }
+    ::set r
+} -result {KW 42 Mo 13 So 19}
+
+test render-term-3.1 {holidays from the view are marked (18)} -body {
+    package require tical::holidays::de
+    ::set s [tical::view::month::getData -year 2025 -month 10 -holidays DE]
+    lindex [split [tical::render::term::print $s] \n] 2
+} -result { ..  ..   1   2  (3)  4   5}
+
+test render-term-3.2 {today is marked [17] only with -color 1} -body {
+    ::set s [markToday [tical::view::month::getData -year 2025 -month 10] 15]
+    list [lindex [split [tical::render::term::print $s -color 1] \n] 4] \
+         [lindex [split [tical::render::term::print $s] \n] 4]
+} -result {{ 13 [14] 15  16  17  18  19} { 13  14  15  16  17  18  19}}
+
+test render-term-3.3 {today wins over holiday} -body {
+    package require tical::holidays::de
+    ::set s [markToday [tical::view::month::getData -year 2025 -month 10 -holidays DE] 4]
+    lindex [split [tical::render::term::print $s -color 1] \n] 2
+} -result { ..  ..   1   2  [3]  4   5}
+
+test render-term-3.4 {days with events: * after the number, also with brackets} -body {
+    package require tical::holidays::de
+    ::set s [tical::view::month::getData -year 2025 -month 10 -holidays DE -events {
+        {summary A dtstart 2025-10-03T10:00}
+        {summary B dtstart 2025-10-14T09:00}
+        {summary C dtstart 2025-10-15}
+    }]
+    ::set s [markToday $s 15]
+    ::set lines [split [tical::render::term::print $s -color 1] \n]
+    list [lindex $lines 2] [lindex $lines 4]
+} -result {{ ..  ..   1   2  (3*  4   5} { 13 [14* 15* 16  17  18  19}}
+
+test render-term-3.5 {multi-day event marks every day it touches} -body {
+    ::set s [tical::view::month::getData -year 2025 -month 10 -events {
+        {summary Messe dtstart 20251020 dtend 20251023}
+    }]
+    lindex [split [tical::render::term::print $s] \n] 5
+} -result { 20* 21* 22* 23  24  25  26}
+
+test render-term-4.1 {Sunday week start: header follows the cells of the view} -setup {
+    ::set old [tical::config::get locale]
+    tical::config::set locale de_DE
+} -body {
+    ::set s [tical::view::month::getData -year 2025 -month 10 -weekStart sun]
+    lrange [split [tical::render::term::print $s] \n] 1 2
+} -cleanup {
+    tical::config::set locale $old
+} -result {{ So  Mo  Di  Mi  Do  Fr  Sa} { ..  ..  ..   1   2   3   4}}
+
+test render-term-4.2 {unknown option: errorcode, known options listed} -body {
+    ::set s [tical::view::month::getData -year 2025 -month 10]
+    catch {tical::render::term::print $s -colour 1} m opt
+    list $m [dict get $opt -errorcode]
+} -result {{render::term::print: unknown option "-colour", must be -color, -weekNumbers or -weekStart} {TICAL RENDER OPTION}}
+
+test render-term-4.3 {week label follows the locale (en_US: Wk)} -setup {
+    ::set old [tical::config::get locale]
+    tical::config::set locale en_US
+} -body {
+    ::set s [tical::view::month::getData -year 2025 -month 10]
+    lindex [split [tical::render::term::print $s -weekNumbers 1] \n] 1
+} -cleanup {
+    tical::config::set locale $old
+} -result { Wk  Mo  Tu  We  Th  Fr  Sa  Su}
+
+test render-term-4.4 {wrong ViewSpec type: English message, stable errorcode} -body {
+    ::set w [tical::view::week::getData -date 2025-10-14]
+    catch {tical::render::term::print $w} m opt
+    list $m [dict get $opt -errorcode]
+} -result {{render::term::print: expected type month-grid, got "week-grid"} {TICAL RENDER TYPE}}
+
+test render-term-4.5 {empty cells without adjacent days} -body {
+    ::set s [tical::view::month::getData -year 2025 -month 10 -showAdjacentDays 0]
+    lindex [split [tical::render::term::print $s] \n] 2
+} -result {  .   .   1   2   3   4   5}
+
+test render-term-4.6 {missing option value} -body {
+    ::set s [tical::view::month::getData -year 2025 -month 10]
+    catch {tical::render::term::print $s -color} m opt
+    list $m [dict get $opt -errorcode]
+} -result {{render::term::print: missing value for option "-color"} {TICAL RENDER OPTION}}
+
+test render-term-5.1 {-weekStart matching the view: no effect} -body {
+    ::set s [tical::view::month::getData -year 2025 -month 10]
+    ::set s7 [tical::view::month::getData -year 2025 -month 10 -weekStart sun]
+    list [string equal [tical::render::term::print $s -weekStart mon] \
+                       [tical::render::term::print $s]] \
+         [string equal [tical::render::term::print $s7 -weekStart sun] \
+                       [tical::render::term::print $s7]]
+} -result {1 1}
+
+test render-term-5.2 {-weekStart contradicting the view: error} -body {
+    ::set s [tical::view::month::getData -year 2025 -month 10]
+    catch {tical::render::term::print $s -weekStart sun} m opt
+    list $m [dict get $opt -errorcode]
+} -result {{render::term::print: -weekStart sun contradicts the view (starts on mon): week start comes from the view; use getData ... -weekStart sun} {TICAL RENDER WEEKSTART}}
+
+test render-term-5.3 {-weekStart with a bad value} -body {
+    ::set s [tical::view::month::getData -year 2025 -month 10]
+    catch {tical::render::term::print $s -weekStart tue} m opt
+    list $m [dict get $opt -errorcode]
+} -result {{bad week start "tue": must be mon or sun} {TICAL RENDER OPTION}}
+
+
+test render-term-6.1 {week column: week of the middle of the row (-firstWeek us, Sunday grid)} -setup {
+    ::set old [tical::config::get locale]
+    tical::config::set locale en_US
+} -body {
+    ::set s [tical::view::month::getData -year 2025 -month 1 -weekStart sun -firstWeek us]
+    lrange [split [tical::render::term::print $s -weekNumbers 1] \n] 1 3
+} -cleanup {
+    tical::config::set locale $old
+} -result {{ Wk  Su  Mo  Tu  We  Th  Fr  Sa} {  1  ..  ..  ..   1   2   3   4} {  2   5   6   7   8   9  10  11}}
 
 cleanupTests

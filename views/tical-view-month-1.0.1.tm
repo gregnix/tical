@@ -1,7 +1,7 @@
 package require tical::core 1.0
 package require tical::config 1.0
 
-package provide tical::view::month 1.0
+package provide tical::view::month 1.0.1
 package require Tcl 8.6-
 
 namespace eval tical::view::month {
@@ -33,6 +33,23 @@ proc tical::view::month::getData {args} {
     if {$o(-year) eq {} || $o(-month) eq {}} {
         error "view::month::getData: -year und -month sind Pflicht"
     }
+    # -count N (N > 1): list of N consecutive month ViewSpecs, starting at
+    # -year/-month (rolls over into the following year). -count 1 (default)
+    # returns a single ViewSpec as before.
+    if {![string is integer -strict $o(-count)] || $o(-count) < 1} {
+        error "view::month::getData: -count muss eine ganze Zahl >= 1 sein"
+    }
+    if {$o(-count) > 1} {
+        set y [scan $o(-year) %d]
+        set m [scan $o(-month) %d]
+        set specs {}
+        for {set i 0} {$i < $o(-count)} {incr i} {
+            lappend specs [getData {*}[array get o] -year $y -month $m -count 1]
+            if {[incr m] > 12} { set m 1; incr y }
+        }
+        return $specs
+    }
+
     if {$o(-tz) eq {}}        { set o(-tz)        [tical::config::get timezone] }
     if {$o(-weekStart) eq {}} { set o(-weekStart) [tical::config::get weekstart] }
     if {$o(-firstWeek) eq {}} { set o(-firstWeek) [tical::config::get firstweek] }

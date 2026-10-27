@@ -171,5 +171,112 @@ test canvas-clear-outline {clearSelection leaves all cells with their outline} -
     list [.hc itemcget rect-2025-10-15 -outline] [llength [.hc find withtag seloverlay]]
 } -result {gray80 0}
 
+
+proc texts {w tag} { lmap i [$w find withtag $tag] {$w itemcget $i -text} }
+
+test canvas-locale-1 {month header and weekdays follow tical::locale (de_DE)} -setup {
+    set old [tical::config::get locale]
+    tical::config::set locale de_DE
+} -body {
+    destroy .lc; canvas .lc
+    tical::render::canvas::draw .lc [tical::view::month::getData -year 2025 -month 10]
+    list [texts .lc title] [texts .lc weekday]
+} -cleanup {
+    tical::config::set locale $old; destroy .lc
+} -result {{{Oktober 2025}} {Mo Di Mi Do Fr Sa So}}
+
+test canvas-locale-2 {en_US and Sunday week start from the view} -setup {
+    set old [tical::config::get locale]
+    tical::config::set locale en_US
+} -body {
+    destroy .lc; canvas .lc
+    tical::render::canvas::draw .lc \
+        [tical::view::month::getData -year 2025 -month 10 -weekStart sun]
+    list [texts .lc title] [texts .lc weekday] [lrange [texts .lc daytext] 0 3]
+} -cleanup {
+    tical::config::set locale $old; destroy .lc
+} -result {{{October 2025}} {Su Mo Tu We Th Fr Sa} {28 29 30 1}}
+
+test canvas-locale-3 {week title follows tical::locale} -setup {
+    set old [tical::config::get locale]
+    tical::config::set locale de_DE
+} -body {
+    destroy .lc; canvas .lc
+    tical::render::canvas::draw .lc [tical::view::week::getData -date 2025-10-14]
+    texts .lc title
+} -cleanup {
+    tical::config::set locale $old; destroy .lc
+} -result {{KW 42, 2025}}
+
+test canvas-empty-cells {-showAdjacentDays 0: empty cells draw without error} -body {
+    destroy .lc; canvas .lc
+    tical::render::canvas::draw .lc \
+        [tical::view::month::getData -year 2025 -month 10 -showAdjacentDays 0] -interactive 1
+    lrange [texts .lc daytext] 0 3
+} -cleanup {
+    destroy .lc
+} -result {{} {} 1 2}
+
+test canvas-error-type {wrong type: stable errorcode} -body {
+    destroy .lc; canvas .lc
+    catch {tical::render::canvas::draw .lc {type nix}} m opt
+    list $m [dict get $opt -errorcode]
+} -cleanup {
+    destroy .lc
+} -result {{render::canvas::draw: expected type month-grid, week-grid or day-grid, got "nix"} {TICAL RENDER TYPE}}
+
+
+test canvas-opt-1 {unknown option: error} -body {
+    destroy .oc; canvas .oc
+    catch {tical::render::canvas::draw .oc [tical::view::month::getData -year 2025 -month 10] -weeknumbers 1} m opt
+    destroy .oc
+    list $m [dict get $opt -errorcode]
+} -result {{render::canvas::draw: unknown option "-weeknumbers", must be -fontsize, -interactive or -weekNumbers} {TICAL RENDER OPTION}}
+
+test canvas-opt-2 {bad -fontsize} -body {
+    destroy .oc; canvas .oc
+    catch {tical::render::canvas::draw .oc [tical::view::month::getData -year 2025 -month 10] -fontsize x} m opt
+    destroy .oc
+    dict get $opt -errorcode
+} -result {TICAL RENDER OPTION}
+
+test canvas-event-1 {month: events as dots (at most three per day)} -body {
+    destroy .ec; canvas .ec
+    ::set s [tical::view::month::getData -year 2025 -month 10 -events {
+        {summary A dtstart 2025-10-14T09:00} {summary B dtstart 2025-10-14T10:00}
+        {summary C dtstart 2025-10-14T11:00} {summary D dtstart 2025-10-14T12:00}
+        {summary E dtstart 2025-10-20}
+    }]
+    tical::render::canvas::draw .ec $s
+    ::set r [list [llength [.ec find withtag event]] [.ec type [lindex [.ec find withtag event] 0]]]
+    destroy .ec
+    ::set r
+} -result {4 oval}
+
+test canvas-event-2 {week: titles with time, continuation marked} -body {
+    destroy .ec; canvas .ec
+    ::set s [tical::view::week::getData -date 2025-10-14 -events {
+        {summary Call dtstart 2025-10-14T09:00}
+        {summary Messe dtstart 2025-10-15 dtend 2025-10-17}
+    }]
+    tical::render::canvas::draw .ec $s
+    ::set r [lsort [lmap i [.ec find withtag event] {.ec itemcget $i -text}]]
+    destroy .ec
+    ::set r
+} -result {{09:00 Call} Messe {… Messe}}
+
+test canvas-event-3 {day: all-day line and titles in the hour rows} -body {
+    package require tical::view::day
+    destroy .ec; canvas .ec
+    ::set s [tical::view::day::getData -date 2025-10-14 -hourStart 8 -hourEnd 10 -events {
+        {summary Urlaub dtstart 2025-10-14}
+        {summary Call dtstart 2025-10-14T09:00}
+    }]
+    tical::render::canvas::draw .ec $s
+    ::set r [lsort [lmap i [.ec find withtag event] {.ec itemcget $i -text}]]
+    destroy .ec
+    ::set r
+} -result {{09:00 Call} Urlaub}
+
 cleanupTests
 

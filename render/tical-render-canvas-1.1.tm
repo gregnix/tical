@@ -1,5 +1,6 @@
 package require Tk
-package require tical::util 1.0
+package require tical::util 1.1
+package require tical::locale 1.0
 
 namespace eval ::tical::render::canvas {
     namespace export draw setSelectMode getSelection setSelection \
@@ -43,6 +44,8 @@ proc ::tical::render::canvas::init {{fontsize 12}} {
         selectColor "#1565C0" \
         selectWidth 2 \
         selectStipple gray25 \
+        eventColor "#2E7D32" \
+        fontEvent [list Arial [expr {max(6, $fontsize - 3)}]] \
     ]
 }
 
@@ -51,15 +54,25 @@ proc ::tical::render::canvas::setCallback {callback} {
     set onDayClickCallback $callback
 }
 
+# Options: -interactive 0|1, -fontsize N, -weekNumbers 0|1. Unknown options
+# are an error {TICAL RENDER OPTION}. Events in the cells of the view are
+# drawn as titles where there is room (week, day) and as dots otherwise
+# (month); tag "event".
 proc ::tical::render::canvas::draw {w viewSpec args} {
-    array set opts [dict merge {-interactive 0 -fontsize 12 -weekNumbers 0} $args]
+    array set opts [::tical::util::options render::canvas::draw \
+        {-interactive 0 -fontsize 12 -weekNumbers 0} $args {TICAL RENDER OPTION}]
+    if {![string is integer -strict $opts(-fontsize)] || $opts(-fontsize) < 4} {
+        return -code error -errorcode {TICAL RENDER OPTION} \
+            "render::canvas::draw: -fontsize must be an integer >= 4, got \"$opts(-fontsize)\""
+    }
     
     init $opts(-fontsize)
     
     $w delete all
     
     if {![dict exists $viewSpec type]} {
-        error "Invalid ViewSpec: missing 'type' field"
+        return -code error -errorcode {TICAL RENDER SPEC} \
+            "render::canvas::draw: ViewSpec missing field: type"
     }
     
     set type [dict get $viewSpec type]
@@ -75,7 +88,8 @@ proc ::tical::render::canvas::draw {w viewSpec args} {
             drawDay $w $viewSpec opts
         }
         default {
-            error "Invalid ViewSpec type: $type (expected month-grid, week-grid, or day-grid)"
+            return -code error -errorcode {TICAL RENDER TYPE} \
+                "render::canvas::draw: expected type month-grid, week-grid or day-grid, got \"$type\""
         }
     }
 }
@@ -101,11 +115,9 @@ proc ::tical::render::canvas::drawMonth {w viewSpec optsName} {
     set month [dict get $viewSpec month]
     set cells [dict get $viewSpec cells]
     
-    set monthNames {
-        "" January February March April May June 
-        July August September October November December
-    }
-    set monthName [lindex $monthNames $month]
+    # Monats- und Tagesnamen aus tical::locale (folgt tical::config locale),
+    # Spaltenfolge aus den Zellen der View (Wochenstart der View)
+    set monthName [::tical::locale::getMonthName $month]
     
     set headerText "$monthName $year"
     set headerX [expr {$leftW + 3.5 * $cellW}]
@@ -113,7 +125,8 @@ proc ::tical::render::canvas::drawMonth {w viewSpec optsName} {
     $w create text $headerX $headerY -text $headerText \
         -anchor center -font $fontTitle -fill black -tags title
     
-    set weekdayNames {Mo Tu We Th Fr Sa Su}
+    set weekdayNames [::tical::locale::getWeekdaysShort \
+        [::tical::util::gridStartDow $cells]]
     set startX $leftW
     if {$o(-weekNumbers)} {
         set startX [expr {$leftW + $cellW * 0.5}]
@@ -139,7 +152,7 @@ proc ::tical::render::canvas::drawMonth {w viewSpec optsName} {
         set x [expr {$startX + $col * $cellW}]
         set y [expr {$topH + $row * $cellH}]
         
-        if {$o(-weekNumbers) && $col == 0 && $week ne ""} {
+        if {$o(-weekNumbers) && $col == 0 && [set week [::tical::util::rowWeek $cells [expr {$row * 7}]]] ne ""} {
             set weekX [expr {$leftW * 0.6}]
             set weekY [expr {$y + $cellH / 2}]
             $w create text $weekX $weekY -text $week \
@@ -177,15 +190,18 @@ proc ::tical::render::canvas::drawMonth {w viewSpec optsName} {
         $w create rectangle $x $y [expr {$x + $cellW}] [expr {$y + $cellH}] \
             -fill $fill -outline $outline -width 1 -tags [list $tag $rectTag daycell]
         
-        scan $date "%d-%d-%d" yy mm dd
+        # empty cell (view with -showAdjacentDays 0): no day number, no bindings
+        set dd ""
+        if {$date ne ""} { scan $date "%d-%d-%d" yy mm dd }
         $w create text [expr {$x + $cellW / 2}] [expr {$y + $cellH / 2}] \
             -text $dd -fill $textColor -font $fontDay -anchor center -tags [list $tag daytext]
+        _drawEvents $w $cellData $x $y $cellW $cellH $tag
         
         if {$date ne ""} {
             set state($w,box,$date) [list $x $y [expr {$x + $cellW}] [expr {$y + $cellH}]]
         }
         
-        if {$o(-interactive)} {
+        if {$o(-interactive) && $date ne ""} {
             $w bind $tag <Button-1>       [list ::tical::render::canvas::onDayClick $w $date 0]
             $w bind $tag <Shift-Button-1> [list ::tical::render::canvas::onDayClick $w $date 1]
             $w bind $tag <Enter> [list ::tical::render::canvas::onDayEnter $w $date]
@@ -246,7 +262,8 @@ proc ::tical::render::canvas::onDayClick {w date {shift 0}} {
 proc ::tical::render::canvas::setSelectMode {w mode} {
     variable state
     if {$mode ni {none single multiple}} {
-        return -code error "selectmode must be none|single|multiple"
+        return -code error -errorcode {TICAL RENDER OPTION} \
+            "selectmode must be none, single or multiple, got \"$mode\""
     }
     set state($w,mode) $mode
     if {$mode eq "none"} { set state($w,sel) {}; _applySelection $w }
@@ -342,6 +359,13 @@ proc ::tical::render::canvas::drawWeek {w viewSpec optsName} {
     }
     set cellW [expr {[dict get $styleOptions cellW] * 1.8}]
     set cellH [expr {[dict get $styleOptions cellH] * 1.5}]
+    # wider columns when there are event titles to show
+    foreach c [dict get $viewSpec cells] {
+        if {[dict exists $c events] && [llength [dict get $c events]]} {
+            set cellW [expr {[dict get $styleOptions cellW] * 3.2}]
+            break
+        }
+    }
     set leftW [dict get $styleOptions leftW]
     set topH [expr {[dict get $styleOptions topH] * 1.2}]
     set fontTitle [dict get $styleOptions fontTitle]
@@ -351,13 +375,22 @@ proc ::tical::render::canvas::drawWeek {w viewSpec optsName} {
     set week [dict get $viewSpec week]
     set cells [dict get $viewSpec cells]
     
-    set headerText "Week $week, $year"
+    # room for event titles below the date: one line per event (max. 6)
+    set lineH [expr {[font metrics [dict get $styleOptions fontEvent] -linespace] + 1}]
+    set nEv 0
+    foreach c $cells {
+        if {[dict exists $c events]} { set nEv [expr {max($nEv, [llength [dict get $c events]])}] }
+    }
+    set nEv [expr {min($nEv, 6)}]
+    set boxH [expr {$cellH * 1.5 + $nEv * $lineH}]
+
+    set headerText "[::tical::locale::getWeekLabel] $week, $year"
     set headerX [expr {$leftW + 3.5 * $cellW}]
     set headerY [expr {$topH * 0.25}]
     $w create text $headerX $headerY -text $headerText \
         -anchor center -font $fontTitle -fill black -tags title
     
-    set weekdayNames {Mo Tu We Th Fr Sa Su}
+    set weekdayNames [::tical::locale::getWeekdaysShort]   ;# Mo..So, dow 1..7
     
     set col 0
     foreach cellData $cells {
@@ -390,18 +423,20 @@ proc ::tical::render::canvas::drawWeek {w viewSpec optsName} {
         set tag "day-$date"
         set rectTag "rect-$date"
         
-        $w create rectangle $x $y [expr {$x + $cellW}] [expr {$y + $cellH * 1.5}] \
+        $w create rectangle $x $y [expr {$x + $cellW}] [expr {$y + $boxH}] \
             -fill $fill -outline $outline -width 1 -tags [list $tag $rectTag daycell]
         
-        set dowName [lindex $weekdayNames $col]
+        set dowName [lindex $weekdayNames [expr {$dow - 1}]]
         $w create text [expr {$x + $cellW / 2}] [expr {$y + $cellH * 0.3}] \
             -text $dowName -fill gray -font $fontDay -anchor center -tags $tag
         
         scan $date "%d-%d-%d" yy mm dd
         $w create text [expr {$x + $cellW / 2}] [expr {$y + $cellH * 0.75}] \
             -text "$dd.$mm" -fill $textColor -font $fontTitle -anchor center -tags [list $tag daytext]
+        _drawEventTitles $w $cellData [expr {$x + 3}] [expr {$y + $cellH * 1.5}] \
+            [expr {$cellW - 6}] $nEv $tag
         
-        set state($w,box,$date) [list $x $y [expr {$x + $cellW}] [expr {$y + $cellH * 1.5}]]
+        set state($w,box,$date) [list $x $y [expr {$x + $cellW}] [expr {$y + $boxH}]]
         if {$o(-interactive)} {
             $w bind $tag <Button-1>       [list ::tical::render::canvas::onDayClick $w $date 0]
             $w bind $tag <Shift-Button-1> [list ::tical::render::canvas::onDayClick $w $date 1]
@@ -413,7 +448,7 @@ proc ::tical::render::canvas::drawWeek {w viewSpec optsName} {
     }
     
     set totalW [expr {$leftW + 7 * $cellW + $leftW * 0.5}]
-    set totalH [expr {$topH + $cellH * 2}]
+    set totalH [expr {$topH + $boxH + $cellH * 0.5}]
     
     $w configure -scrollregion [list 0 0 $totalW $totalH]
     _applySelection $w
@@ -442,6 +477,20 @@ proc ::tical::render::canvas::drawDay {w viewSpec optsName} {
     $w create text $headerX $headerY -text $headerText \
         -anchor center -font $fontTitle -fill black -tags title
     
+    # all-day events (and days of multi-day events) under the title
+    set allday {}
+    if {[dict exists $viewSpec events]} {
+        foreach ev [dict get $viewSpec events] {
+            if {[dict get $ev allday] || [dict get $ev part] eq "middle"} { lappend allday $ev }
+        }
+    }
+    if {[llength $allday]} {
+        _drawEventTitles $w [dict create events $allday] $leftW [expr {$topH * 0.55}] \
+            [expr {$cellW * 4}] [llength $allday] allday
+        set topH [expr {$topH + [llength $allday] * \
+            ([font metrics [dict get $styleOptions fontEvent] -linespace] + 1)}]
+    }
+    
     set row 0
     foreach cellData $cells {
         set hour [dict get $cellData hour]
@@ -467,6 +516,21 @@ proc ::tical::render::canvas::drawDay {w viewSpec optsName} {
         
         $w create text [expr {$leftW + 10}] [expr {$y + $cellH * 0.45}] \
             -text $time -fill $textColor -font $fontDay -anchor w -tags $tag
+        if {[dict exists $cellData events] && [llength [dict get $cellData events]]} {
+            set titles {}
+            foreach ev [dict get $cellData events] {
+                set t [dict get $ev summary]
+                if {[dict get $ev time] ne ""} { set t "[dict get $ev time] $t" }
+                if {[dict get $ev part] in {middle end}} { set t "\u2026 $t" }
+                lappend titles $t
+            }
+            set tx [expr {$leftW + 10 + [font measure $fontDay "00:00"] + 10}]
+            $w create text $tx [expr {$y + $cellH * 0.45}] \
+                -text [_fit [join $titles "; "] [dict get $styleOptions fontDay] \
+                    [expr {$leftW + $cellW * 4 - $tx - 4}]] \
+                -fill [dict get $styleOptions eventColor] -font $fontDay -anchor w \
+                -tags [list $tag event]
+        }
         
         incr row
     }
@@ -477,6 +541,59 @@ proc ::tical::render::canvas::drawDay {w viewSpec optsName} {
     $w configure -scrollregion [list 0 0 $totalW $totalH]
 }
 
-package provide tical::render::canvas 1.0
+# --- events -------------------------------------------------------------
+
+# Shorten text to fit into width pixels (ellipsis).
+proc ::tical::render::canvas::_fit {text font width} {
+    if {[font measure $font $text] <= $width} { return $text }
+    set ell "\u2026"
+    while {[string length $text] > 0 && [font measure $font $text$ell] > $width} {
+        set text [string range $text 0 end-1]
+    }
+    return $text$ell
+}
+
+# Month cell: up to three dots at the bottom (titles do not fit).
+proc ::tical::render::canvas::_drawEvents {w cellData x y cellW cellH tag} {
+    variable styleOptions
+    if {![dict exists $cellData events]} return
+    set n [llength [dict get $cellData events]]
+    if {$n == 0} return
+    set col [dict get $styleOptions eventColor]
+    set r [expr {max(1.5, $cellH / 16.0)}]
+    set k [expr {min($n, 3)}]
+    set cy [expr {$y + $cellH - $r - 1.5}]
+    for {set i 0} {$i < $k} {incr i} {
+        set cx [expr {$x + $cellW / 2.0 + ($i - ($k - 1) / 2.0) * 3 * $r}]
+        $w create oval [expr {$cx - $r}] [expr {$cy - $r}] [expr {$cx + $r}] [expr {$cy + $r}] \
+            -fill $col -outline $col -tags [list $tag event]
+    }
+}
+
+# Titles one per line from (x,y), at most maxLines (last line "+N").
+proc ::tical::render::canvas::_drawEventTitles {w cellData x y width maxLines tag} {
+    variable styleOptions
+    if {![dict exists $cellData events]} return
+    set evs [dict get $cellData events]
+    if {![llength $evs] || $maxLines < 1} return
+    set font [dict get $styleOptions fontEvent]
+    set lineH [expr {[font metrics $font -linespace] + 1}]
+    set i 0
+    foreach ev $evs {
+        if {$i == $maxLines - 1 && [llength $evs] > $maxLines} {
+            set t "+[expr {[llength $evs] - $i}]"
+        } else {
+            set t [dict get $ev summary]
+            if {[dict get $ev time] ne ""} { set t "[dict get $ev time] $t" }
+            if {[dict get $ev part] in {middle end}} { set t "\u2026 $t" }
+        }
+        $w create text $x [expr {$y + $i * $lineH}] -text [_fit $t $font $width] \
+            -anchor nw -font $font -fill [dict get $styleOptions eventColor] \
+            -tags [list $tag event]
+        if {[incr i] >= $maxLines} break
+    }
+}
+
+package provide tical::render::canvas 1.1
 package require Tcl 8.6-
 

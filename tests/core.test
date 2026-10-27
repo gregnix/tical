@@ -13,4 +13,22 @@ test core-1.2 {leap year} -body {
     tical::core::isLeap 2024
 } -result 1
 
+test core-2.1 {calendarData without -month} -body {
+    catch {tical::core::calendarData -year 2025} m opt
+    list $m [dict get $opt -errorcode]
+} -result {{calendarData: -year and -month are required} {TICAL CORE ARGS}}
+
+
+test core-3.1 {weekNumber iso/simple/us} -body {
+    lmap d {2025-01-05 2023-01-01 2025-12-31} {
+        ::set t [clock scan "$d 12:00:00" -timezone UTC]
+        lmap fw {iso simple us} {tical::core::weekNumber $t UTC $fw}
+    }
+} -result {{1 1 2} {52 1 1} {1 53 53}}
+
+test core-3.2 {weekNumber: bad firstWeek} -body {
+    catch {tical::core::weekNumber 0 UTC nix} m opt
+    list $m [dict get $opt -errorcode]
+} -result {{bad firstWeek "nix": must be iso, simple or us} {TICAL CORE FIRSTWEEK}}
+
 cleanupTests

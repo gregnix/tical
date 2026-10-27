@@ -1,6 +1,6 @@
 package require tcltest
 lappend auto_path [file normalize [file dirname [info script]]/..]
-package require tical::adapter::sqlite
+package require tical::adapter::sqlite 1.1
 
 namespace import tcltest::*
 
@@ -328,6 +328,56 @@ test sqlite-10.1 {NULL handling - optional fields not in dict} -body {
     expr {![dict exists $retrieved description] && \
           ![dict exists $retrieved location]}
 } -result 1
+
+test sqlite-err-1 {read unknown uid: errorcode} -body {
+    ::set db [tical::adapter::sqlite::connect ":memory:"]
+    catch {tical::adapter::sqlite::read $db nix} m opt
+    tical::adapter::sqlite::disconnect $db
+    list $m [dict get $opt -errorcode]
+} -result {{event not found: nix} {TICAL SQLITE NOTFOUND}}
+
+
+test sqlite-9.1 {event format: dtstart/dtend in, read returns both forms (1.1)} -body {
+    ::set db [tical::adapter::sqlite::connect ":memory:"]
+    tical::adapter::sqlite::create $db {uid n1 summary Neu dtstart 2025-10-14T09:00Z dtend 2025-10-14T10:00Z}
+    ::set e [tical::adapter::sqlite::read $db n1]
+    tical::adapter::sqlite::disconnect $db
+    lmap k {dtstart dtend allday starts_at ends_at} {dict get $e $k}
+} -result {20251014T090000Z 20251014T100000Z 0 20251014T090000Z 20251014T100000Z}
+
+test sqlite-9.2 {all-day event} -body {
+    ::set db [tical::adapter::sqlite::connect ":memory:"]
+    tical::adapter::sqlite::create $db {uid a1 summary Messe dtstart 2025-10-20 dtend 2025-10-23}
+    ::set e [tical::adapter::sqlite::read $db a1]
+    tical::adapter::sqlite::disconnect $db
+    lmap k {dtstart dtend allday} {dict get $e $k}
+} -result {20251020 20251023 1}
+
+test sqlite-9.3 {listRange: ISO bounds, a date as end bound includes the day} -body {
+    ::set db [tical::adapter::sqlite::connect ":memory:"]
+    tical::adapter::sqlite::create $db {summary A dtstart 20251031T090000Z}
+    tical::adapter::sqlite::create $db {summary B dtstart 20251101T090000Z}
+    ::set r [lmap e [tical::adapter::sqlite::listRange $db 2025-10-01 2025-10-31] {dict get $e summary}]
+    tical::adapter::sqlite::disconnect $db
+    ::set r
+} -result A
+
+test sqlite-9.4 {read result can be passed to getData -events} -body {
+    package require tical::view::month 1.1
+    ::set db [tical::adapter::sqlite::connect ":memory:"]
+    tical::adapter::sqlite::create $db {uid r1 summary R starts_at 20251014T090000}
+    ::set evs [tical::adapter::sqlite::listAll $db]
+    tical::adapter::sqlite::disconnect $db
+    ::set s [tical::view::month::getData -year 2025 -month 10 -events $evs]
+    dict get [lindex [dict get [lindex [dict get $s cells] 15] events] 0] summary
+} -result R
+
+test sqlite-9.5 {invalid value is an error} -body {
+    ::set db [tical::adapter::sqlite::connect ":memory:"]
+    catch {tical::adapter::sqlite::create $db {summary X dtstart morgen}} m opt
+    tical::adapter::sqlite::disconnect $db
+    dict get $opt -errorcode
+} -result {TICAL EVENT FORMAT}
 
 cleanupTests
 

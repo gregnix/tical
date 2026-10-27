@@ -1,0 +1,131 @@
+package require tcltest
+set rootDir [file dirname [file dirname [file normalize [info script]]]]
+lappend auto_path $rootDir
+# tclutils (tuical, turrule): TCLUTILS_TM names its lib/tm directory (empty:
+# do not look further); otherwise a sibling checkout ../tclutils/lib/tm or the
+# module path already set. Without tclutils this file is skipped.
+if {[info exists ::env(TCLUTILS_TM)]} {
+    if {$::env(TCLUTILS_TM) ne ""} { tcl::tm::path add $::env(TCLUTILS_TM) }
+} elseif {[file isdirectory [file join [file dirname $rootDir] tclutils lib tm]]} {
+    tcl::tm::path add [file join [file dirname $rootDir] tclutils lib tm]
+}
+package require tical::io::import 1.1
+package require tical::view::month 1.1
+package require tical::render::term 1.1
+package require tical::io::ical 1.1
+
+namespace import tcltest::*
+
+set ics [string trim {
+    BEGIN:VCALENDAR
+    VERSION:2.0
+    PRODID:-//test//test//EN
+    BEGIN:VEVENT
+    UID:messe@example.org
+    DTSTART;VALUE=DATE:20251020
+    DTEND;VALUE=DATE:20251023
+    SUMMARY:Messe\, Halle 3
+    END:VEVENT
+    BEGIN:VEVENT
+    UID:call@example.org
+    DTSTART:20251014T070000Z
+    DURATION:PT1H30M
+    SUMMARY:Call
+    LOCATION:Raum 1
+    END:VEVENT
+    BEGIN:VEVENT
+    UID:sport@example.org
+    DTSTART;TZID=Europe/Berlin:20251006T180000
+    DTEND;TZID=Europe/Berlin:20251006T190000
+    RRULE:FREQ=WEEKLY;BYDAY=MO;COUNT=6
+    EXDATE;TZID=Europe/Berlin:20251013T180000
+    SUMMARY:Sport
+    CATEGORIES:privat,Sport
+    END:VEVENT
+    BEGIN:VEVENT
+    UID:sport@example.org
+    RECURRENCE-ID;TZID=Europe/Berlin:20251027T180000
+    DTSTART;TZID=Europe/Berlin:20251028T180000
+    DTEND;TZID=Europe/Berlin:20251028T190000
+    SUMMARY:Sport (verlegt)
+    END:VEVENT
+    BEGIN:VEVENT
+    UID:zahltag@example.org
+    DTSTART;VALUE=DATE:20250930
+    RRULE:FREQ=MONTHLY;BYMONTHDAY=-1
+    SUMMARY:Zahltag
+    END:VEVENT
+    END:VCALENDAR
+}]
+# remove the indentation of the lines above, CRLF line ends
+set ics [string map {\n \r\n} [regsub -all -line {^\s+} $ics ""]]
+
+proc brief {evs} {
+    lmap e $evs {list [dict get $e summary] [dict get $e dtstart] \
+        [expr {[dict exists $e dtend] ? [dict get $e dtend] : "-"}]}
+}
+
+test import-1.1 {parse: events in the tical::event format} -body {
+    brief [tical::io::import::parse $ics]
+} -result {{{Messe, Halle 3} 20251020 20251023} {Call 20251014T070000Z 20251014T083000Z} {Sport 20251006T180000 20251006T190000} {{Sport (verlegt)} 20251028T180000 20251028T190000} {Zahltag 20250930 -}}
+
+test import-1.2 {parse: VALUE=DATE is all-day, TZID kept, lists split} -body {
+    ::set evs [tical::io::import::parse $ics]
+    list [dict get [lindex $evs 0] allday] [dict get [lindex $evs 2] tzid] \
+         [dict get [lindex $evs 2] categories] [dict get [lindex $evs 2] rrule] \
+         [dict get [lindex $evs 2] exdate] [dict get [lindex $evs 3] recurrence-id]
+} -result {1 Europe/Berlin {privat Sport} {freq WEEKLY byday MO count 6} 20251013T180000 20251027T180000}
+
+test import-2.1 {expand: series in October, EXDATE and override honoured} -body {
+    brief [tical::io::import::expand [tical::io::import::parse $ics] 2025-10-01 2025-10-31 Europe/Berlin]
+} -result {{Sport 20251006T180000 20251006T190000} {Call 20251014T070000Z 20251014T083000Z} {{Messe, Halle 3} 20251020 20251023} {Sport 20251020T180000 20251020T190000} {{Sport (verlegt)} 20251028T180000 20251028T190000} {Zahltag 20251031 -}}
+
+test import-2.2 {expand: multi-day event that started before the range} -body {
+    brief [tical::io::import::expand [tical::io::import::parse $ics] 2025-10-22 2025-10-22 Europe/Berlin]
+} -result {{{Messe, Halle 3} 20251020 20251023}}
+
+test import-2.3 {eventsInRange = expand [parse]; result feeds the month view} -body {
+    ::set evs [tical::io::import::eventsInRange $ics 2025-10-01 2025-10-31 Europe/Berlin]
+    ::set s [tical::view::month::getData -year 2025 -month 10 -tz Europe/Berlin -events $evs]
+    lindex [split [tical::render::term::print $s] \n] 5
+} -result { 20* 21* 22* 23  24  25  26}
+
+test import-2.4 {expanded occurrence carries recurrence-id, no rrule} -body {
+    ::set e [lindex [tical::io::import::expand [tical::io::import::parse $ics] 2025-10-06 2025-10-06 Europe/Berlin] 0]
+    list [dict exists $e rrule] [dict get $e recurrence-id] [dict get $e uid]
+} -result {0 20251006T180000 sport@example.org}
+
+test import-3.1 {round trip: export, import} -body {
+    ::set ev [tical::io::ical::makeEvent -uid r1 -summary "Ganztag; mit Komma, Text" \
+        -dtstart 20251020 -dtend 20251022 -rrule {freq YEARLY count 2}]
+    ::set back [lindex [tical::io::import::parse [tical::io::ical::exportEvents [list $ev]]] 0]
+    lmap k {uid summary dtstart dtend allday rrule} {dict get $back $k}
+} -result {r1 {Ganztag; mit Komma, Text} 20251020 20251022 1 {freq YEARLY count 2}}
+
+test import-4.1 {unsupported RRULE part: error} -body {
+    ::set evs [list {summary X dtstart 20251001 rrule {freq MONTHLY bysetpos -1}}]
+    catch {tical::io::import::expand $evs 2025-10-01 2025-10-31} m opt
+    list [string match {*unsupported rule part: BYSETPOS*} $m] [dict get $opt -errorcode]
+} -result {1 {TICAL IMPORT RRULE}}
+
+test import-4.2 {syntax error in the file} -body {
+    catch {tical::io::import::parse "BEGIN:VCALENDAR\r\nBEGIN:VEVENT\r\n"} m opt
+    dict get $opt -errorcode
+} -result {TICAL IMPORT SYNTAX}
+
+test import-4.3 {range bounds must be dates} -body {
+    catch {tical::io::import::expand {} 2025-10-01T10:00 2025-10-31} m opt
+    dict get $opt -errorcode
+} -result {TICAL IMPORT RANGE}
+
+test import-5.1 {readFile} -setup {
+    ::set fn [tcltest::makeFile {} tical-import-5.1.ics]
+    ::set ch [open $fn w]; fconfigure $ch -encoding utf-8 -translation lf
+    puts -nonewline $ch $ics; close $ch
+} -body {
+    llength [tical::io::import::readFile $fn]
+} -cleanup {
+    tcltest::removeFile tical-import-5.1.ics
+} -result 5
+
+cleanupTests

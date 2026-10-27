@@ -17,4 +17,29 @@ test util-expand-2 {expandSelection invalid token -> error} -body {
     catch {tical::util::expandSelection {2025-1-1}} e
     set e
 } -match glob -result {invalid selection entry*}
+test util-expand-3 {invalid token: errorcode} -body {
+    catch {tical::util::expandSelection {2025-1-1}} e opt
+    dict get $opt -errorcode
+} -result {TICAL UTIL SELECTION}
+test util-gridstart-1 {gridStartDow: Monday grid} -body {
+    package require tical::view::month
+    tical::util::gridStartDow [dict get [tical::view::month::getData -year 2025 -month 10] cells]
+} -result 1
+test util-gridstart-2 {gridStartDow: Sunday grid, empty leading cells} -body {
+    tical::util::gridStartDow [dict get [tical::view::month::getData -year 2025 -month 10 \
+        -weekStart sun -showAdjacentDays 0] cells]
+} -result 7
+
+
+test util-options-1 {options: merged dict} -body {
+    tical::util::options who {-a 1 -b 2} {-b 3} {TICAL X OPTION}
+} -result {-a 1 -b 3}
+test util-options-2 {options: unknown option} -body {
+    catch {tical::util::options who {-a 1 -b 2} {-c 3} {TICAL X OPTION}} m opt
+    list $m [dict get $opt -errorcode]
+} -result {{who: unknown option "-c", must be -a or -b} {TICAL X OPTION}}
+test util-weekstart-1 {weekStartDow} -body {
+    lmap v {mon Monday sun SUNDAY} {tical::util::weekStartDow $v}
+} -result {1 1 7 7}
+
 cleanupTests

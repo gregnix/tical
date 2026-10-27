@@ -14,7 +14,13 @@
 ```
 
 **Beschreibung:**  
-Exportiert eine Liste von Events zu iCalendar-String.
+Exportiert eine Liste von Events zu iCalendar-String. Jedes Event läuft
+vorher durch `tical::event::normalize`: ISO-Datum (`2025-10-14`,
+`2025-10-14T09:00`) und die älteren Feldnamen (`title`/`date`/`startTime`
+aus `tical::model`, `starts_at`/`ends_at` aus `tical::adapter::sqlite`)
+werden angenommen, eine fehlende UID wird erzeugt. Ganztägige Events
+(Datum ohne Uhrzeit) werden als `DTSTART;VALUE=DATE` geschrieben, DTEND
+exklusiv.
 
 **Parameter:**
 - `events` - Liste von Event-Dicts
@@ -78,9 +84,15 @@ Validiert Event-Dict vor Export.
 - `error` bei ungültigem Event
 
 **Prüft:**
-- Pflicht-Felder: uid, dtstart, summary
-- DateTime-Formate
-- RRULE-Konsistenz
+- Pflicht-Felder: uid, dtstart, summary (errorcode `TICAL ICAL FIELD`)
+- Zeitformat von dtstart/dtend: `YYYYMMDD` (ganztägig),
+  `YYYYMMDDTHHMMSS` (lokal) oder `YYYYMMDDTHHMMSSZ` (UTC); beide von
+  derselben Art (`TICAL ICAL FORMAT`), dtend nicht vor dtstart
+  (`TICAL ICAL RANGE`)
+- rrule wie beim Export: FREQ vorhanden und erlaubt, nicht COUNT und UNTIL
+  zugleich (`TICAL ICAL RRULE`)
+
+`exportEvents` ruft `validate` nicht selbst auf.
 
 **Beispiel:**
 ```tcl
@@ -275,6 +287,7 @@ Baut RRULE-String aus Dict.
 - `until` - End-Datum (optional, exklusiv zu count)
 - `interval` - Intervall (default: 1)
 - `byday` - Liste: MO,TU,WE,TH,FR,SA,SU (optional)
+- `bymonth`, `bymonthday` - Listen (optional, werden durchgereicht)
 - `wkst` - Week start: MO|SU (optional)
 
 **Beispiele:**
@@ -350,6 +363,11 @@ dict create \
 - Falsche DateTime-Formate
 - Inkonsistente RRULE (COUNT + UNTIL)
 
+Meldungen sind englisch; der errorcode ist `{TICAL ICAL FIELD}`,
+`{TICAL ICAL FORMAT}`, `{TICAL ICAL RANGE}` oder `{TICAL ICAL RRULE}` und
+lässt sich mit `try … trap {TICAL ICAL} …` abfangen. `exportEvents` meldet
+Fehler aus `tical::event::normalize` mit `{TICAL EVENT …}`.
+
 **Best Practice:**
 ```tcl
 if {[catch {
@@ -419,6 +437,27 @@ puts $ics
 
 ---
 
+## Import (tical::io::import, optional)
+
+Braucht tclutils (`tclutils::tuical`, `tclutils::turrule`).
+
+| Aufruf | Ergebnis |
+|---|---|
+| `tical::io::import::parse ics` | Liste von Events (Format `tical::event`) |
+| `tical::io::import::readFile datei` | dasselbe aus einer Datei (UTF-8) |
+| `tical::io::import::expand events von bis ?tz?` | Vorkommen, die `von`..`bis` (Tage, einschließlich) berühren; RRULE aufgelöst, EXDATE und RECURRENCE-ID beachtet, nach Start sortiert |
+| `tical::io::import::eventsInRange ics von bis ?tz?` | `expand [parse ics] von bis` |
+
+Jedes Vorkommen trägt `recurrence-id` (Start des Vorkommens), kein
+`rrule`. Fehler: `{TICAL IMPORT SYNTAX|FORMAT|FIELD|RRULE|RANGE}`.
+
+```tcl
+set evs [tical::io::import::eventsInRange $ics 2025-10-01 2025-10-31]
+set spec [tical::view::month::getData -year 2025 -month 10 -events $evs]
+```
+
+---
+
 ## Performance
 
 **Benchmark (1000 Events):**
@@ -433,12 +472,13 @@ puts $ics
 ## Siehe auch
 
 - [Limitierungen](ICALENDAR-SUPPORT.md)
-- [Demo-Skript](../demos/demo-ical-export.tcl)
-- [Tests](../tests/ical.test)
+- [Demo-Skript Export](../demos/demo-export-ics.tcl)
+- [Demo-Skript Import](../demos/demo-events-import.tcl)
+- [Tests](../tests/io-ical.test), [Import-Tests](../tests/io-import.test)
 - [RFC 5545](https://tools.ietf.org/html/rfc5545)
 
 ---
 
-**Version:** 1.0  
-**Package:** tical::io::ical  
+**Version:** 1.1  
+**Package:** tical::io::ical, tical::io::import  
 **Requires:** Tcl 8.6+

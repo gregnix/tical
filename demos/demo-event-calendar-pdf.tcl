@@ -27,24 +27,22 @@ cd $outDir
 
 puts "\n=== Event-Kalender PDF Demo ===\n"
 
-tical::config::set today "2025-10-14"
-
 set year 2025
 set month 10
 
-# Events/Termine definieren (Datum -> Titel)
+# Termine im Format von tical::event; die View verteilt sie auf die Zellen
+# (mehrtaegige in jede beruehrte Zelle), der Renderer zeigt die Titel
 set events {
-    "2025-10-03" "Tag der Einheit"
-    "2025-10-14" "Team Meeting 09:00"
-    "2025-10-15" "Projekt Review"
-    "2025-10-20" "Deadline Report"
-    "2025-10-24" "Workshop TclTk"
-    "2025-10-31" "Halloween"
+    {summary "Team Meeting" dtstart 2025-10-14T09:00 dtend 2025-10-14T10:00}
+    {summary "Projekt Review" dtstart 2025-10-15T14:00}
+    {summary "Messe Halle 3" dtstart 2025-10-20 dtend 2025-10-23}
+    {summary "Workshop TclTk" dtstart 2025-10-24T09:00 dtend 2025-10-24T16:00}
+    {summary "Halloween" dtstart 2025-10-31}
 }
-set eventDates [dict keys $events]
 
 # ViewSpec + localized month name
-set spec [tical::view::month::getData -year $year -month $month -holidays {de}]
+set spec [tical::view::month::getData -year $year -month $month -holidays {de} \
+    -events $events]
 set monthName [::tical::locale::getMonthName $month]
 
 # PDF
@@ -62,7 +60,8 @@ $pdf text "Terminkalender" \
     -x [expr {$pageW / 2.0}] -y [expr {$margin + 20}] -align center
 
 # Kalendergitter ueber den gemeinsamen Renderer-Block zeichnen.
-# events -> Termin-Tage werden eingefaerbt (Prioritaet: heute > Termin > Feiertag > Wochenende).
+# Termin-Tage werden eingefaerbt (Prioritaet: heute > Termin > Feiertag >
+# Wochenende), die Titel stehen unter der Tageszahl.
 set startY [expr {$margin + 60}]
 set calH   350
 set blockW [expr {$pageW - 2 * $margin}]
@@ -70,7 +69,6 @@ set blockW [expr {$pageW - 2 * $margin}]
 set opts $::tical::render::pdf::defaultOptions
 dict set opts weekNumbers 0
 dict set opts fontsize 11
-dict set opts events $eventDates
 dict set opts colorEvent "#E8F5E9"
 
 ::tical::render::pdf::_drawMonthBlock $pdf $spec $margin $startY $blockW $calH $opts
@@ -85,10 +83,13 @@ $pdf text "Termine im $monthName $year:" -x $margin -y $listY -align left
 $pdf setFont 10 Helvetica
 set ly [expr {$listY + 25}]
 
-foreach {date title} $events {
+foreach ev $events {
+    set ev [tical::event::normalize $ev]
+    lassign [tical::event::toLocal [dict get $ev dtstart]] date time
     set d [lindex [split $date "-"] 2]
     set displayDate "[scan $d %d]. $monthName"
-    $pdf text "\u2022 $displayDate: $title" -x [expr {$margin + 10}] -y $ly -align left
+    if {$time ne ""} { append displayDate ", $time" }
+    $pdf text "\u2022 $displayDate: [dict get $ev summary]" -x [expr {$margin + 10}] -y $ly -align left
     set ly [expr {$ly + 15}]
 }
 

@@ -1,8 +1,8 @@
-package provide tical::io::ical 1.0
+package provide tical::io::ical 1.0.1
 package require Tcl 8.6-
 
 namespace eval tical::io::ical {
-    variable prodid "-//tical//tical v2.0//EN"
+    variable prodid "-//tical//tical 1.0//EN"
     namespace export exportEvents exportToFile validate makeEvent
 }
 
@@ -21,7 +21,8 @@ proc tical::io::ical::exportEvents {events} {
 # Exportiert Events in Datei
 proc tical::io::ical::exportToFile {events filename} {
     ::set f [open $filename w]
-    fconfigure $f -encoding utf-8 -translation crlf
+    # exportEvents already joins with CRLF; write it unchanged
+    fconfigure $f -encoding utf-8 -translation lf
     puts -nonewline $f [exportEvents $events]
     close $f
     return $filename

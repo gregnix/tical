@@ -4,14 +4,14 @@ lappend auto_path $rootDir
 package require tical
 namespace import ::tcltest::*
 
-test umbrella-1 {package require tical reports 1.0} -body {
+test umbrella-1 {package require tical reports 1.1} -body {
     package require tical
-} -result 1.0
+} -result 1.1
 
 test umbrella-2 {Tk-free core components are loaded} -body {
     set missing {}
     foreach pkg {tical::util tical::core tical::config tical::locale tical::term
-                 tical::holidays tical::holidays::de tical::model tical::io::ical
+                 tical::holidays tical::holidays::de tical::event tical::model tical::io::ical
                  tical::view::day tical::view::week tical::view::month
                  tical::render::term} {
         if {[catch {package present $pkg}]} { lappend missing $pkg }
@@ -19,9 +19,10 @@ test umbrella-2 {Tk-free core components are loaded} -body {
     set missing
 } -result {}
 
-test umbrella-3 {optional Tk/pdf/sqlite layers are NOT auto-loaded} -body {
+test umbrella-3 {optional Tk/pdf/sqlite/import layers are NOT auto-loaded} -body {
     set loaded {}
-    foreach pkg {tical::render::canvas tical::render::pdf tical::adapter::sqlite} {
+    foreach pkg {tical::render::canvas tical::render::pdf tical::adapter::sqlite
+                 tical::io::import} {
         if {![catch {package present $pkg}]} { lappend loaded $pkg }
     }
     set loaded

@@ -43,6 +43,11 @@ test holidays-markers {Markers Format} -body {
     expr {[llength $markers] > 0}
 } -result 1
 
+test holidays-region-case {Region key is case-insensitive (de = DE)} -body {
+    expr {[tical::holidays::getHolidays de 2025 10] eq [tical::holidays::getHolidays DE 2025 10]
+          && [dict size [tical::holidays::getHolidays de 2025 10]] == 1}
+} -result 1
+
 cleanupTests
 
 

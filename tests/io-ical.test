@@ -197,5 +197,132 @@ test export-1.12 {makeEvent Convenience-Funktion} -body {
     expr {[lsearch $checks 0] == -1}
 } -result 1
 
+test export-2.1 {exportToFile writes plain CRLF (no CR CR LF)} -setup {
+    ::set fn [tcltest::makeFile {} tical-export-2.1.ics]
+} -body {
+    tical::io::ical::exportToFile [list [tical::io::ical::makeEvent \
+        -dtstart 20251014T090000Z -summary Test]] $fn
+    ::set ch [open $fn rb]; ::set data [read $ch]; close $ch
+    list [string first "\r\r" $data] [string match "BEGIN:VCALENDAR\r\nVERSION:2.0\r\n*" $data]
+} -cleanup {
+    tcltest::removeFile tical-export-2.1.ics
+} -result {-1 1}
+
+
+test validate-1.1 {local time (no Z) is valid} -body {
+    tical::io::ical::validate {uid u1 dtstart 20251014T090000 summary S}
+} -result 1
+
+test validate-1.2 {UTC time is valid, dtend checked too} -body {
+    tical::io::ical::validate {uid u1 dtstart 20251014T090000Z dtend 20251014T100000Z summary S}
+} -result 1
+
+test validate-2.1 {missing field: English message, errorcode} -body {
+    catch {tical::io::ical::validate {uid u1 summary S}} m opt
+    list $m [dict get $opt -errorcode]
+} -result {{event missing required field: dtstart} {TICAL ICAL FIELD}}
+
+test validate-2.2 {message names the formats that are allowed} -body {
+    catch {tical::io::ical::validate {uid u1 dtstart 2025101 summary S}} m opt
+    list $m [dict get $opt -errorcode]
+} -result {{dtstart format invalid: "2025101" (expected YYYYMMDD, YYYYMMDDTHHMMSS or YYYYMMDDTHHMMSSZ)} {TICAL ICAL FORMAT}}
+
+test validate-1.3 {date (all-day) is valid, dtend exclusive} -body {
+    tical::io::ical::validate {uid u1 dtstart 20251014 dtend 20251015 summary S}
+} -result 1
+
+test validate-2.6 {date and date-time mixed} -body {
+    catch {tical::io::ical::validate {uid u1 dtstart 20251014 dtend 20251014T100000 summary S}} m opt
+    list $m [dict get $opt -errorcode]
+} -result {{dtstart and dtend must both be dates (YYYYMMDD) or both date-times} {TICAL ICAL FORMAT}}
+
+test validate-2.7 {dtend before dtstart} -body {
+    catch {tical::io::ical::validate {uid u1 dtstart 20251014T100000Z dtend 20251014T090000Z summary S}} m opt
+    list $m [dict get $opt -errorcode]
+} -result {{dtend "20251014T090000Z" is before dtstart "20251014T100000Z"} {TICAL ICAL RANGE}}
+
+test validate-2.3 {dtend message names the formats too} -body {
+    catch {tical::io::ical::validate {uid u1 dtstart 20251014T090000Z dtend 2025-10-14 summary S}} m opt
+    list $m [dict get $opt -errorcode]
+} -result {{dtend format invalid: "2025-10-14" (expected YYYYMMDD, YYYYMMDDTHHMMSS or YYYYMMDDTHHMMSSZ)} {TICAL ICAL FORMAT}}
+
+test validate-2.4 {rrule is checked like on export} -body {
+    catch {tical::io::ical::validate {uid u1 dtstart 20251014T090000Z summary S rrule {freq HOURLY}}} m opt
+    list $m [dict get $opt -errorcode]
+} -result {{FREQ must be DAILY|WEEKLY|MONTHLY|YEARLY, got "HOURLY"} {TICAL ICAL RRULE}}
+
+test validate-2.5 {COUNT and UNTIL together} -body {
+    catch {tical::io::ical::validate {uid u1 dtstart 20251014T090000Z summary S rrule {freq DAILY count 2 until 20251231T000000Z}}} m opt
+    list $m [dict get $opt -errorcode]
+} -result {{RRULE cannot have both COUNT and UNTIL} {TICAL ICAL RRULE}}
+
+test ical-iso-1 {ICalToISO8601: English message} -body {
+    catch {tical::io::ical::ICalToISO8601 2025} m opt
+    list $m [dict get $opt -errorcode]
+} -result {{invalid iCalendar date-time: "2025" (expected YYYYMMDDTHHMMSS or YYYYMMDDTHHMMSSZ)} {TICAL ICAL FORMAT}}
+
+test fold-1.1 {folding counts UTF-8 octets, max 75 per line} -body {
+    ::set ev [tical::io::ical::makeEvent -uid u1 -dtstart 20251014T090000Z \
+        -summary [string repeat \u00e4 60]]
+    ::set max 0
+    foreach l [split [tical::io::ical::exportEvents [list $ev]] \n] {
+        ::set l [string trimright $l \r]
+        ::set b [string length [encoding convertto utf-8 $l]]
+        if {$b > $max} { ::set max $b }
+    }
+    expr {$max <= 75 && $max >= 74}
+} -result 1
+
+test fold-1.2 {unfolding gives the original line} -body {
+    ::set text "[string repeat \u00e4b 40] Ende"
+    ::set f [tical::io::ical::FoldLine "SUMMARY:$text"]
+    string equal [string map [list "\r\n " ""] $f] "SUMMARY:$text"
+} -result 1
+
+
+# lines of a VEVENT without DTSTAMP
+proc veventLines {ics} {
+    ::set out {}
+    foreach l [split [string map {"\r\n" "\n"} $ics] \n] {
+        if {[string match DTSTAMP:* $l] || [string match UID:* $l]} continue
+        lappend out $l
+    }
+    join [lrange $out [lsearch $out BEGIN:VEVENT] [lsearch $out END:VEVENT]] " "
+}
+
+test allday-1.1 {all-day event: VALUE=DATE, DTEND exclusive} -body {
+    veventLines [tical::io::ical::exportEvents [list \
+        [tical::io::ical::makeEvent -dtstart 20251020 -dtend 20251023 -summary Messe]]]
+} -result {BEGIN:VEVENT DTSTART;VALUE=DATE:20251020 DTEND;VALUE=DATE:20251023 SUMMARY:Messe END:VEVENT}
+
+test allday-1.2 {ISO date and allday 1 are written as VALUE=DATE} -body {
+    veventLines [tical::io::ical::exportEvents [list \
+        {uid u1 summary Urlaub dtstart 2025-10-20T00:00 dtend 2025-10-24T00:00 allday 1}]]
+} -result {BEGIN:VEVENT DTSTART;VALUE=DATE:20251020 DTEND;VALUE=DATE:20251025 SUMMARY:Urlaub END:VEVENT}
+
+test allday-1.3 {EXDATE of an all-day series} -body {
+    ::set ics [tical::io::ical::exportEvents [list {uid u1 summary Sport dtstart 20251014
+        rrule {freq WEEKLY count 4} exdate {2025-10-21}}]]
+    list [string match "*EXDATE;VALUE=DATE:20251021*" $ics] [string match "*RRULE:FREQ=WEEKLY;COUNT=4*" $ics]
+} -result {1 1}
+
+test export-3.1 {older field names (tical::model, adapter::sqlite) are exported} -body {
+    ::set a [veventLines [tical::io::ical::exportEvents [list \
+        {id appt-1 title Meeting date 2025-10-14 startTime 09:00 endTime 10:00}]]]
+    ::set b [veventLines [tical::io::ical::exportEvents [list \
+        {uid s1 summary Sync starts_at 20251014T090000Z ends_at 20251014T093000Z}]]]
+    list $a $b
+} -result {{BEGIN:VEVENT DTSTART:20251014T090000 DTEND:20251014T100000 SUMMARY:Meeting END:VEVENT} {BEGIN:VEVENT DTSTART:20251014T090000Z DTEND:20251014T093000Z SUMMARY:Sync END:VEVENT}}
+
+test export-3.2 {RRULE string and BYMONTH/BYMONTHDAY are written} -body {
+    ::set ics [tical::io::ical::exportEvents [list {uid u1 summary Zahltag dtstart 20251031
+        rrule FREQ=MONTHLY;BYMONTHDAY=-1;COUNT=3}]]
+    string match "*RRULE:FREQ=MONTHLY;COUNT=3;BYMONTHDAY=-1*" $ics
+} -result 1
+
+test export-3.3 {PRODID names 1.1} -body {
+    string match "*PRODID:-//tical//tical 1.1//EN*" [tical::io::ical::exportEvents {}]
+} -result 1
+
 cleanupTests
 

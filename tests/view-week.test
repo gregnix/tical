@@ -49,6 +49,57 @@ test week-validate {Validate correct ViewSpec} -body {
     tical::view::week::validate $spec
 } -result 1
 
+
+test week-iso-year-1 {-date at year end: ISO year, not calendar year} -body {
+    set spec [tical::view::week::getData -date 2024-12-30]
+    list [dict get $spec year] [dict get $spec week] \
+        [dict get [lindex [dict get $spec cells] 0] date]
+} -result {2025 1 2024-12-30}
+
+test week-iso-year-2 {-date at year start in week 53 of the previous year} -body {
+    set spec [tical::view::week::getData -date 2027-01-01]
+    list [dict get $spec year] [dict get $spec week] \
+        [dict get [lindex [dict get $spec cells] 0] date]
+} -result {2026 53 2026-12-28}
+
+test week-holiday-year-boundary {holidays of the following year are marked} -body {
+    package require tical::holidays::de
+    set spec [tical::view::week::getData -date 2026-12-31 -holidays DE]
+    lmap c [dict get $spec cells] {
+        if {"holiday" ni [dict get $c markers]} continue
+        dict get $c date
+    }
+} -result {2027-01-01}
+
+test week-tz {Monday stays Monday in a timezone west of UTC} -body {
+    set spec [tical::view::week::getData -year 2025 -week 42 -tz America/New_York]
+    dict get [lindex [dict get $spec cells] 0] date
+} -result 2025-10-13
+
+test week-error-args {missing -year/-week: English message, errorcode} -body {
+    catch {tical::view::week::getData -year 2025} m opt
+    list $m [dict get $opt -errorcode]
+} -result {{view::week::getData: -year and -week (or -date) are required} {TICAL VIEW ARGS}}
+
+test week-error-type {validate: wrong type} -body {
+    catch {tical::view::week::validate {type month-grid year 1 week 1 cols 7 rows 1 cells {}}} m opt
+    list $m [dict get $opt -errorcode]
+} -result {{ViewSpec type must be week-grid, got "month-grid"} {TICAL VIEW TYPE}}
+
+
+test view-week-5.1 {unknown option: error} -body {
+    catch {tical::view::week::getData -date 2025-10-14 -weekStart sun} m opt
+    list $m [dict get $opt -errorcode]
+} -result {{view::week::getData: unknown option "-weekStart", must be -date, -events, -holidays, -tz, -week or -year} {TICAL VIEW OPTION}}
+
+test view-week-5.2 {-events: multi-day event over the week end} -body {
+    ::set s [tical::view::week::getData -date 2025-10-14 -events {
+        {summary Reise dtstart 2025-10-18 dtend 2025-10-21}
+        {summary Call dtstart 2025-10-14T09:00}
+    }]
+    lmap c [dict get $s cells] {lmap e [dict get $c events] {list [dict get $e summary] [dict get $e part]}}
+} -result {{} {{Call single}} {} {} {} {{Reise start}} {{Reise middle}}}
+
 cleanupTests
 
 

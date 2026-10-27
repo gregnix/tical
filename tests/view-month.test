@@ -15,4 +15,109 @@ test view-month-1.2 {type is month-grid} -body {
     dict get $s type
 } -result "month-grid"
 
+test view-month-2.1 {-count 3 returns three consecutive ViewSpecs} -body {
+    ::set specs [tical::view::month::getData -year 2025 -month 11 -count 3]
+    ::set r {}
+    foreach s $specs { lappend r [dict get $s year]-[dict get $s month] }
+    ::set r
+} -result {2025-11 2025-12 2026-1}
+
+test view-month-2.2 {-count 1 still returns a single ViewSpec} -body {
+    dict get [tical::view::month::getData -year 2025 -month 10 -count 1] type
+} -result month-grid
+
+test view-month-2.3 {-count 0 is an error} -body {
+    tical::view::month::getData -year 2025 -month 10 -count 0
+} -returnCodes error -match glob -result {*-count*}
+
+test view-month-3.1 {missing -month: English message, errorcode} -body {
+    catch {tical::view::month::getData -year 2025} m opt
+    list $m [dict get $opt -errorcode]
+} -result {{view::month::getData: -year and -month are required} {TICAL VIEW ARGS}}
+
+test view-month-3.2 {-count 0: errorcode} -body {
+    catch {tical::view::month::getData -year 2025 -month 10 -count 0} m opt
+    list $m [dict get $opt -errorcode]
+} -result {{view::month::getData: -count must be an integer >= 1, got "0"} {TICAL VIEW COUNT}}
+
+
+test view-month-4.1 {unknown option: error with the known options} -body {
+    catch {tical::view::month::getData -year 2025 -month 10 -weekstart sun} m opt
+    list $m [dict get $opt -errorcode]
+} -result {{view::month::getData: unknown option "-weekstart", must be -count, -events, -firstWeek, -holidays, -month, -showAdjacentDays, -tz, -weekStart or -year} {TICAL VIEW OPTION}}
+
+test view-month-4.2 {bad -weekStart} -body {
+    catch {tical::view::month::getData -year 2025 -month 10 -weekStart tue} m opt
+    list $m [dict get $opt -errorcode]
+} -result {{bad week start "tue": must be mon or sun} {TICAL VIEW OPTION}}
+
+test view-month-4.3 {-weekStart sunday (long form) is accepted} -body {
+    dict get [lindex [dict get [tical::view::month::getData -year 2025 -month 10 -weekStart sunday] cells] 0] dow
+} -result 7
+
+test view-month-4.4 {bad -firstWeek} -body {
+    catch {tical::view::month::getData -year 2025 -month 10 -firstWeek nix} m opt
+    list $m [dict get $opt -errorcode]
+} -result {{view::month::getData: bad -firstWeek "nix": must be iso, simple or us} {TICAL VIEW OPTION}}
+
+test view-month-5.1 {-firstWeek: week of the first row in January 2023} -body {
+    # 2023-01-01 is a Sunday: ISO week 52 (of 2022), simple 1, us 1
+    lmap fw {iso simple us} {
+        ::set s [tical::view::month::getData -year 2023 -month 1 -weekStart sun -firstWeek $fw]
+        dict get [lindex [dict get $s cells] 0] week
+    }
+} -result {52 01 01}
+
+test view-month-5.2 {-firstWeek us: week 1 from January 1, Sunday starts week 2 (2025)} -body {
+    ::set s [tical::view::month::getData -year 2025 -month 1 -weekStart sun -firstWeek us]
+    lmap c [lrange [dict get $s cells] 0 13] {dict get $c week}
+} -result {53 53 53 01 01 01 01 02 02 02 02 02 02 02}
+
+test view-month-5.3 {-firstWeek follows tical::config firstweek} -setup {
+    ::set old [tical::config::get firstweek]
+    tical::config::set firstweek simple
+} -body {
+    dict get [tical::view::month::getData -year 2025 -month 10] firstWeek
+} -cleanup {
+    tical::config::set firstweek $old
+} -result simple
+
+test view-month-6.1 {-events: entries in the cells, adjacent days included} -body {
+    ::set s [tical::view::month::getData -year 2025 -month 10 -events {
+        {summary Messe dtstart 2025-10-31 dtend 2025-11-03}
+        {summary Call dtstart 2025-10-14T09:00 dtend 2025-10-14T09:30}
+    }]
+    ::set r {}
+    foreach c [dict get $s cells] {
+        foreach e [dict get $c events] {
+            lappend r [dict get $c date] [dict get $e summary] [dict get $e part]
+        }
+    }
+    ::set r
+} -result {2025-10-14 Call single 2025-10-31 Messe start 2025-11-01 Messe middle 2025-11-02 Messe end}
+
+test view-month-6.2 {-events with -count: every month gets its events} -body {
+    ::set specs [tical::view::month::getData -year 2025 -month 10 -count 2 -events {
+        {summary Messe dtstart 2025-10-31 dtend 2025-11-03}
+    }]
+    lmap s $specs {
+        ::set n 0
+        foreach c [dict get $s cells] { if {[dict get $c inMonth]} { incr n [llength [dict get $c events]] } }
+        ::set n
+    }
+} -result {1 2}
+
+test view-month-6.3 {-events: invalid event is an error} -body {
+    catch {tical::view::month::getData -year 2025 -month 10 -events {{summary X}}} m opt
+    list $m [dict get $opt -errorcode]
+} -result {{event missing required field: dtstart} {TICAL EVENT FIELD}}
+
+test view-month-6.4 {-events: tical::model record of 1.0.1 accepted} -body {
+    ::set s [tical::view::month::getData -year 2025 -month 10 -events {
+        {id appt-1 title Meeting date 2025-10-14 startTime 10:00 endTime 11:00}
+    }]
+    ::set e [lindex [dict get [lindex [dict get $s cells] 15] events] 0]
+    list [dict get $e summary] [dict get $e time] [dict get $e uid]
+} -result {Meeting 10:00 appt-1}
+
 cleanupTests

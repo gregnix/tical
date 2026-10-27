@@ -21,71 +21,33 @@ puts "\n======================================================"
 puts "        JAHRESKALENDER 2025 (Terminal)"
 puts "======================================================\n"
 
-tical::config::set today "2025-10-14"
 tical::config::set weekstart "mon"
 
 set year 2025
 set cols 3  ;# 3 Monate pro Zeile
+set width 32 ;# Breite eines Monats mit Wochennummern (8 Spalten zu 4 Zeichen)
 
-set monthNames {
-    "" Januar Februar Maerz April Mai Juni
-    Juli August September Oktober November Dezember
-}
-
-# Alle 12 Monate generieren
+# Alle 12 Monate generieren und rendern (render::term liefert Monatsname,
+# Wochentage und sechs Wochenzeilen; Feiertage aus der View als (3))
 set allMonths {}
 for {set m 1} {$m <= 12} {incr m} {
-    set spec [tical::view::month::getData -year $year -month $m -holidays {de}]
-    lappend allMonths [list $m $spec]
+    set spec [tical::view::month::getData -year $year -month $m -holidays DE]
+    lappend allMonths [split [tical::render::term::print $spec -color 1 -weekNumbers 1] \n]
 }
 
 # Ausgabe: 4 Zeilen x 3 Spalten
 for {set row 0} {$row < 4} {incr row} {
-    # Header-Zeile mit Monatsnamen
-    set headerLine ""
-    for {set col 0} {$col < $cols} {incr col} {
-        set idx [expr {$row * $cols + $col}]
-        if {$idx < [llength $allMonths]} {
-            set monthData [lindex $allMonths $idx]
-            set m [lindex $monthData 0]
-            set name [lindex $monthNames $m]
-            set headerLine "$headerLine [format "%-22s" $name]  "
-        }
-    }
-    puts $headerLine
-    
-    # Kalender nebeneinander
-    set maxLines 9  ;# Maximale Zeilen pro Monat
-    
-    for {set line 0} {$line < $maxLines} {incr line} {
+    set block [lrange $allMonths [expr {$row * $cols}] [expr {$row * $cols + $cols - 1}]]
+    for {set line 0} {$line < 8} {incr line} {
         set outputLine ""
-        
-        for {set col 0} {$col < $cols} {incr col} {
-            set idx [expr {$row * $cols + $col}]
-            if {$idx < [llength $allMonths]} {
-                set monthData [lindex $allMonths $idx]
-                set spec [lindex $monthData 1]
-                
-                # Monat rendern
-                set rendered [tical::render::term::print $spec -color 0 -weekNumbers 1 -compact 1]
-                set lines [split $rendered "\n"]
-                
-                if {$line < [llength $lines]} {
-                    set l [lindex $lines $line]
-                    set outputLine "$outputLine [format "%-22s" $l]  "
-                } else {
-                    set outputLine "$outputLine [format "%-22s" ""]  "
-                }
-            }
+        foreach lines $block {
+            append outputLine [format "%-*s  " $width [lindex $lines $line]]
         }
-        
-        puts $outputLine
+        puts [string trimright $outputLine]
     }
-    
     puts ""
 }
 
 puts "======================================================"
-puts "Legende: * = Heute, H = Feiertag"
+puts "Legende: \[ \] = heute, ( ) = Feiertag (DE)"
 puts "======================================================\n"
-

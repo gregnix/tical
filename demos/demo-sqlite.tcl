@@ -24,8 +24,8 @@ puts "   ================================"
 
 ::set event1 [dict create \
     uid "event-1" \
-    starts_at "20251014T090000Z" \
-    ends_at "20251014T100000Z" \
+    dtstart "20251014T090000Z" \
+    dtend "20251014T100000Z" \
     summary "Team Standup" \
     description "Daily standup meeting" \
     location "Conference Room A" \
@@ -35,8 +35,8 @@ puts "   ================================"
 puts "   Event 1 erstellt: $uid1"
 
 ::set event2 [dict create \
-    starts_at "20251015T140000Z" \
-    ends_at "20251015T150000Z" \
+    dtstart "20251015T140000Z" \
+    dtend "20251015T150000Z" \
     summary "Code Review" \
     description "Review pull requests" \
     categories [list "Work" "Development"]]
@@ -45,8 +45,8 @@ puts "   Event 1 erstellt: $uid1"
 puts "   Event 2 erstellt: $uid2"
 
 ::set event3 [dict create \
-    starts_at "20251016T100000Z" \
-    ends_at "20251016T110000Z" \
+    dtstart "20251016T100000Z" \
+    dtend "20251016T110000Z" \
     summary "Weekly Planning" \
     rrule [dict create freq WEEKLY count 4]]
 
@@ -59,7 +59,7 @@ puts "   ====================================="
 ::set allEvents [tical::adapter::sqlite::listAll $db]
 puts "   Gefunden: [llength $allEvents] Events"
 foreach event $allEvents {
-    puts "   - [dict get $event summary] ([dict get $event starts_at])"
+    puts "   - [dict get $event summary] ([dict get $event dtstart])"
 }
 puts ""
 
@@ -76,7 +76,7 @@ puts ""
 puts "5. Event aktualisieren (UPDATE)..."
 puts "   ================================"
 ::set updated [dict create \
-    starts_at "20251014T100000Z" \
+    dtstart "20251014T100000Z" \
     summary "Team Standup (UPDATED)" \
     description "Updated description" \
     status "TENTATIVE"]
@@ -125,7 +125,7 @@ puts ""
 puts "9. Event mit Kategorien..."
 puts "   ======================="
 ::set event4 [dict create \
-    starts_at "20251017T150000Z" \
+    dtstart "20251017T150000Z" \
     summary "Project Review" \
     categories [list "Work" "Project" "Review"]]
 

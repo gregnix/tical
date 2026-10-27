@@ -1,5 +1,6 @@
-package provide tical::render::term 1.0
+package provide tical::render::term 1.0.1
 package require Tcl 8.6-
+package require tical::locale 1.0
 
 namespace eval tical::render::term {
     namespace export print
@@ -19,18 +20,23 @@ proc tical::render::term::print {viewSpec args} {
     set year  [dict get $viewSpec year]
     set cells [dict get $viewSpec cells]
 
-    # Kopf abhängig von weekStart
-    if {$o(-weekNumbers)} {
-        set headerDays(mon) " KW Mo Tu We Th Fr Sa Su"
-        set headerDays(sun) " KW Su Mo Tu We Th Fr Sa"
-    } else {
-        set headerDays(mon) " Mo Tu We Th Fr Sa Su"
-        set headerDays(sun) " Su Mo Tu We Th Fr Sa"
+    # Kopf abhängig von weekStart; Monats- und Tagesnamen aus tical::locale
+    # (folgt tical::config locale, wie render::pdf)
+    if {$o(-weekStart) ni {mon sun}} {
+        error "render::term::print: -weekStart muss mon oder sun sein"
     }
-    set header [format " %s %d " [clock format [clock scan "$year-[format %02d $month]-01"] -format %B] $year]
+    set wd [::tical::locale::getWeekdaysShort]   ;# Mo..So
+    if {$o(-weekStart) eq "sun"} {
+        set wd [linsert [lrange $wd 0 5] 0 [lindex $wd 6]]
+    }
+    set headerDays " [join $wd { }]"
+    if {$o(-weekNumbers)} {
+        set headerDays " KW$headerDays"
+    }
+    set header [format " %s %d " [::tical::locale::getMonthName $month] $year]
     set out  ""
     append out $header \n
-    append out $headerDays($o(-weekStart)) \n
+    append out $headerDays \n
 
     # 42 Zellen in 6 Zeilen
     for {set i 0} {$i < [llength $cells]} {incr i} {

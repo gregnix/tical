@@ -1,13 +1,14 @@
 # tical Demos
 
-**16 vollständige Demo-Skripte** zeigen alle Features von tical v2.0.
+**19 vollständige Demo-Skripte** zeigen alle Features von tical 1.1.
 
 ---
 
 ## 📋 Terminal Demos (4)
 
 ### 1. demo-month-term.tcl
-Monatskalender im Terminal mit Farben, KW, Heute-Marker.
+Monatskalender im Terminal mit KW, Feiertagen und Terminen.
+Legende: `[17]` heute, `(3)` Feiertag, `14*` Tag mit Termin.
 ```bash
 tclsh demo-month-term.tcl
 ```
@@ -25,7 +26,7 @@ tclsh demo-day-term.tcl
 ```
 
 ### 4. demo-year-term.tcl ⭐ NEU!
-Kompletter Jahreskalender (12 Monate, 4x3 Grid) mit KW.
+Kompletter Jahreskalender (12 Monate, 4x3 Grid) mit KW, Feiertage als `(3)`.
 ```bash
 tclsh demo-year-term.tcl
 ```
@@ -85,8 +86,9 @@ tclsh demo-quarter-pdf.tcl
 # Erstellt: calendar-2025-Q1..Q4.pdf (4 Dateien)
 ```
 
-### 12. demo-event-calendar-pdf.tcl ⭐ NEU!
-Monatskalender mit Termin-Liste und Legende.
+### 12. demo-event-calendar-pdf.tcl
+Monatskalender mit Terminen aus der View (`-events`, Titel in den Zellen),
+Termin-Liste und Legende.
 ```bash
 tclsh demo-event-calendar-pdf.tcl
 # Erstellt: calendar-events-2025-10.pdf
@@ -127,7 +129,8 @@ Benötigt: `tclMuPDF`
 ## 📦 Data & Model Demos (2)
 
 ### 15. demo-model.tcl
-Model-Layer Demo (Appointments + Events CRUD).
+Model-Layer Demo (Appointments + Events CRUD, Felder wie `tical::event`,
+`toEvents` in die Monatsansicht).
 ```bash
 tclsh demo-model.tcl
 ```
@@ -141,13 +144,22 @@ tclsh demo-sqlite.tcl
 
 ---
 
-## 📅 iCalendar Demo (1)
+## 📅 iCalendar Demos (2)
 
 ### 17. demo-export-ics.tcl
 iCalendar Export Demo (VEVENT, RRULE, EXDATE).
 ```bash
 tclsh demo-export-ics.tcl
 # Erstellt: calendar.ics, recurring.ics
+```
+
+### 19. demo-events-import.tcl
+Liest `data/termine.ics` (ganztägig, Wiederholungen, EXDATE, verlegter
+Termin), löst Oktober 2025 auf und zeigt den Monat mit Terminen; mit pdf4tcl
+auch `out/termine-2025-10.pdf`. Benötigt tclutils (`TCLUTILS_TM` oder
+`../tclutils/lib/tm`).
+```bash
+tclsh demo-events-import.tcl
 ```
 
 ---
@@ -171,9 +183,9 @@ tclsh demo-locale.tcl
 | **PDF** | 4 | pdf4tcl |
 | **PNG** | 2 | pdf4tcl + tclMuPDF |
 | **Data** | 2 | TDBC (built-in) |
-| **iCalendar** | 1 | - |
+| **iCalendar** | 2 | - (Import: tclutils) |
 | **Locale** | 1 | Tcl 8.6+ |
-| **TOTAL** | **18** | |
+| **TOTAL** | **19** | |
 
 ---
 
@@ -198,6 +210,7 @@ tclsh demo-locale.tcl
 | model | - | - | - | - |
 | sqlite | - | - | - | SQLite |
 | export-ics | - | - | - | iCalendar |
+| events-import | ✅ | - | ❌ | Terminal/PDF |
 | locale | - | - | - | - |
 
 ---
@@ -232,5 +245,5 @@ tclsh demo-quarter-png.tcl
 
 ---
 
-**tical — 18 Demos zeigen alle Features!** 🎉
+**tical — 19 Demos zeigen alle Features!** 🎉
 

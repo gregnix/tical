@@ -56,6 +56,46 @@ test day-validate {Validate correct ViewSpec} -body {
     tical::view::day::validate $spec
 } -result 1
 
+test day-error-args {missing -date: English message, errorcode} -body {
+    catch {tical::view::day::getData} m opt
+    list $m [dict get $opt -errorcode]
+} -result {{view::day::getData: -date is required} {TICAL VIEW ARGS}}
+
+test day-error-spec {validate: missing field} -body {
+    catch {tical::view::day::validate {type day-grid}} m opt
+    list $m [dict get $opt -errorcode]
+} -result {{ViewSpec missing field: date} {TICAL VIEW SPEC}}
+
+
+test view-day-5.1 {unknown option: error} -body {
+    catch {tical::view::day::getData -date 2025-10-14 -hours 8} m opt
+    list $m [dict get $opt -errorcode]
+} -result {{view::day::getData: unknown option "-hours", must be -date, -events, -holidays, -hourEnd, -hourStart or -tz} {TICAL VIEW OPTION}}
+
+test view-day-5.2 {-hourStart out of range} -body {
+    catch {tical::view::day::getData -date 2025-10-14 -hourStart 25} m opt
+    list $m [dict get $opt -errorcode]
+} -result {{view::day::getData: -hourStart must be an integer 0..23, got "25"} {TICAL VIEW OPTION}}
+
+test view-day-6.1 {-events: day list and hour cells} -body {
+    ::set s [tical::view::day::getData -date 2025-10-14 -tz UTC -hourStart 8 -hourEnd 12 -events {
+        {summary Ganztag dtstart 2025-10-14}
+        {summary Meeting dtstart 2025-10-14T09:30 dtend 2025-10-14T11:00}
+        {summary Kurz dtstart 2025-10-14T12:15}
+        {summary Morgen dtstart 2025-10-15T09:00}
+    }]
+    list [lmap e [dict get $s events] {dict get $e summary}] \
+         [lmap c [dict get $s cells] {lmap e [dict get $c events] {list [dict get $e summary] [dict get $e part] [dict get $e time]}}]
+} -result {{Ganztag Meeting Kurz} {{} {{Meeting start 09:30}} {{Meeting end {}}} {} {{Kurz single 12:15}}}}
+
+test view-day-6.2 {-events: event from the day before ends in the morning} -body {
+    ::set s [tical::view::day::getData -date 2025-10-15 -tz UTC -hourStart 0 -hourEnd 3 -events {
+        {summary Nacht dtstart 2025-10-14T22:00 dtend 2025-10-15T02:00}
+    }]
+    list [lmap e [dict get $s events] {dict get $e part}] \
+         [lmap c [dict get $s cells] {lmap e [dict get $c events] {dict get $e part}}]
+} -result {end {middle end {} {}}}
+
 cleanupTests
 
 

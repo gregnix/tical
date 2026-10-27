@@ -6,5 +6,8 @@ demos/out/*
 *.pdf
 *.png
 
+# sample input of demo-events-import.tcl
+!demos/data/*.ics
+
 # internal development notes (not published)
 nogit/

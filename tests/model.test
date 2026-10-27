@@ -3,7 +3,7 @@ package require tcltest
 set rootDir [file dirname [file dirname [file normalize [info script]]]]
 lappend auto_path $rootDir
 
-package require tical::model 1.0
+package require tical::model 1.1
 
 namespace import ::tcltest::*
 
@@ -80,6 +80,66 @@ test model-clear-all {Clear all appointments and events} -body {
     set id2 [tical::model::createEvent -title "Event" -date 2025-10-14]
     tical::model::clearAll
     expr {[llength [tical::model::listAppointments]] == 0 && [llength [tical::model::listEvents]] == 0}
+} -result 1
+
+test model-error-1 {missing -title/-date} -body {
+    catch {tical::model::createAppointment -title x} m opt
+    list $m [dict get $opt -errorcode]
+} -result {{appointment requires -summary and -dtstart (or -title and -date)} {TICAL MODEL ARGS}}
+
+test model-error-2 {unknown event id} -body {
+    catch {tical::model::getEvent evt-0} m opt
+    list $m [dict get $opt -errorcode]
+} -result {{event not found: evt-0} {TICAL MODEL NOTFOUND}}
+
+
+test model-2.1 {new options: record in the event format plus the 1.0.1 fields} -body {
+    tical::model::clearAll
+    ::set id [tical::model::createAppointment -summary Review -dtstart 2025-10-15T14:00 \
+        -dtend 2025-10-15T15:30 -location B2]
+    ::set a [tical::model::getAppointment $id]
+    list {*}[lmap k {summary dtstart dtend allday title date startTime endTime} {dict get $a $k}] \
+        [string equal [dict get $a uid] $id]
+} -result {Review 20251015T140000 20251015T153000 0 Review 2025-10-15 14:00 15:30 1}
+
+test model-2.2 {old options give the same record} -body {
+    tical::model::clearAll
+    ::set id [tical::model::createAppointment -title Review -date 2025-10-15 \
+        -startTime 14:00 -endTime 15:30]
+    ::set a [tical::model::getAppointment $id]
+    lmap k {summary dtstart dtend allday} {dict get $a $k}
+} -result {Review 20251015T140000 20251015T153000 0}
+
+test model-2.3 {event without time is all-day} -body {
+    tical::model::clearAll
+    ::set id [tical::model::createEvent -title Geburtstag -date 2025-10-14 -category privat]
+    ::set e [tical::model::getEvent $id]
+    lmap k {summary dtstart allday categories allDay category} {dict get $e $k}
+} -result {Geburtstag 20251014 1 privat 1 privat}
+
+test model-2.4 {update with old and new field names} -body {
+    tical::model::clearAll
+    ::set id [tical::model::createAppointment -title M -date 2025-10-14 -startTime 09:00]
+    tical::model::updateAppointment $id -date 2025-10-16
+    ::set r [dict get [tical::model::getAppointment $id] dtstart]
+    tical::model::updateAppointment $id -summary N -dtstart 2025-10-17T08:00
+    ::set a [tical::model::getAppointment $id]
+    list $r [dict get $a dtstart] [dict get $a date] [dict get $a title]
+} -result {20251016T090000 20251017T080000 2025-10-17 N}
+
+test model-2.5 {toEvents: event dicts for the views} -body {
+    tical::model::clearAll
+    tical::model::createAppointment -title M -date 2025-10-14 -startTime 09:00
+    tical::model::createEvent -summary Messe -dtstart 2025-10-20 -dtend 2025-10-23
+    regsub -all {(appt|evt)-\d+} [tical::model::toEvents] {\1-N}
+} -result {{summary M dtstart 20251014T090000 allday 0 uid appt-N} {summary Messe dtend 20251023 dtstart 20251020 allday 1 uid evt-N color {}}}
+
+test model-2.6 {toEvents feeds getData -events} -body {
+    package require tical::view::month 1.1
+    tical::model::clearAll
+    tical::model::createAppointment -title M -date 2025-10-14 -startTime 09:00
+    ::set s [tical::view::month::getData -year 2025 -month 10 -events [tical::model::toEvents]]
+    llength [dict get [lindex [dict get $s cells] 15] events]
 } -result 1
 
 cleanupTests

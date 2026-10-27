@@ -102,5 +102,32 @@ test locale-6.2 {getSupportedLanguages} -body {
     tical::locale::getSupportedLanguages
 } -result {de en fr}
 
+
+test locale-5.1 {weekday list rotated to a start day} -setup {
+    tical::config::set locale de_DE
+} -body {
+    list [tical::locale::getWeekdaysShort 7] [tical::locale::getWeekdayNames long 7]
+} -result {{So Mo Di Mi Do Fr Sa} {Sonntag Montag Dienstag Mittwoch Donnerstag Freitag Samstag}}
+
+test locale-5.2 {week label long and short} -body {
+    set r {}
+    foreach l {de_DE en_US fr_FR} {
+        tical::config::set locale $l
+        lappend r [tical::locale::getWeekLabel] [tical::locale::getWeekLabel short]
+    }
+    tical::config::set locale de_DE
+    set r
+} -result {KW KW Week Wk Semaine Sem}
+
+test locale-5.3 {invalid start day: errorcode} -body {
+    catch {tical::locale::getWeekdaysShort 0} m opt
+    list $m [dict get $opt -errorcode]
+} -result {{startDow must be an integer 1..7, got "0"} {TICAL LOCALE DOW}}
+
+test locale-5.4 {config: unknown key, errorcode} -body {
+    catch {tical::config::get nix} m opt
+    list $m [dict get $opt -errorcode]
+} -result {{unknown key: nix} {TICAL CONFIG KEY}}
+
 cleanupTests
 

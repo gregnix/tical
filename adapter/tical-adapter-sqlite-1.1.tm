@@ -1,7 +1,13 @@
 # tical::adapter::sqlite - SQLite Persistence Adapter
+#
+# Events in the format of tical::event (dtstart, dtend, summary ...). The
+# table keeps its columns starts_at/ends_at. For one version (1.1) the
+# fields starts_at/ends_at are still accepted by create/update and still
+# present in what read/listRange/listAll return; they will be removed in 1.2.
 
 package require Tcl 8.6-
 package require tdbc::sqlite3
+package require tical::event 1.1
 
 namespace eval ::tical::adapter::sqlite {
     namespace export connect disconnect create read update delete listRange listAll exists migrate
@@ -47,7 +53,7 @@ proc ::tical::adapter::sqlite::migrate {db} {
 }
 
 proc ::tical::adapter::sqlite::create {db event} {
-    _validateEvent $event
+    ::set event [_normalize $event]
     
     ::set now [_timestamp]
     
@@ -63,8 +69,8 @@ proc ::tical::adapter::sqlite::create {db event} {
     
     ::set data [dict create \
         uid [_getOrGenerate $event uid] \
-        starts_at [_dictGet $event starts_at ""] \
-        ends_at [_dictGet $event ends_at ""] \
+        starts_at [_dictGet $event dtstart ""] \
+        ends_at [_dictGet $event dtend ""] \
         summary [_dictGet $event summary ""] \
         description [_dictGet $event description ""] \
         location [_dictGet $event location ""] \
@@ -90,7 +96,7 @@ proc ::tical::adapter::sqlite::read {db uid} {
     $stmt close
     
     if {[llength $rows] == 0} {
-        error "Event not found: $uid"
+        return -code error -errorcode {TICAL SQLITE NOTFOUND} "event not found: $uid"
     }
     
     return [_deserializeEvent [lindex $rows 0]]
@@ -98,8 +104,9 @@ proc ::tical::adapter::sqlite::read {db uid} {
 
 proc ::tical::adapter::sqlite::update {db uid event} {
     if {![exists $db $uid]} {
-        error "Event not found: $uid"
+        return -code error -errorcode {TICAL SQLITE NOTFOUND} "event not found: $uid"
     }
+    ::set event [_normalize $event]
     
     ::set now [_timestamp]
     
@@ -120,8 +127,8 @@ proc ::tical::adapter::sqlite::update {db uid event} {
     
     ::set data [dict create \
         uid $uid \
-        starts_at [_dictGet $event starts_at ""] \
-        ends_at [_dictGet $event ends_at ""] \
+        starts_at [_dictGet $event dtstart ""] \
+        ends_at [_dictGet $event dtend ""] \
         summary [_dictGet $event summary ""] \
         description [_dictGet $event description ""] \
         location [_dictGet $event location ""] \
@@ -139,7 +146,7 @@ proc ::tical::adapter::sqlite::update {db uid event} {
 
 proc ::tical::adapter::sqlite::delete {db uid} {
     if {![exists $db $uid]} {
-        error "Event not found: $uid"
+        return -code error -errorcode {TICAL SQLITE NOTFOUND} "event not found: $uid"
     }
     
     ::set stmt [$db prepare {DELETE FROM events WHERE uid = :uid}]
@@ -158,7 +165,13 @@ proc ::tical::adapter::sqlite::exists {db uid} {
     return [expr {$count > 0}]
 }
 
+# Events starting in startDate..endDate. Bounds in any form tical::event
+# accepts (2025-10-01, 20251001, 20251001T090000Z ...); a date as end bound
+# includes that whole day.
 proc ::tical::adapter::sqlite::listRange {db startDate endDate} {
+    ::set startDate [::tical::event::normalizeValue $startDate startDate]
+    ::set endDate [::tical::event::normalizeValue $endDate endDate]
+    if {[string length $endDate] == 8} { append endDate T235959Z }
     ::set stmt [$db prepare {
         SELECT * FROM events 
         WHERE starts_at >= :start AND starts_at <= :end
@@ -188,26 +201,36 @@ proc ::tical::adapter::sqlite::listAll {db} {
 }
 
 proc ::tical::adapter::sqlite::_validateEvent {event} {
-    if {![dict exists $event starts_at]} {
-        error "Event requires starts_at field"
+    if {![dict exists $event dtstart] && ![dict exists $event starts_at]} {
+        return -code error -errorcode {TICAL SQLITE ARGS} "event requires field: dtstart (or starts_at)"
     }
     
-    if {![dict exists $event summary]} {
-        error "Event requires summary field"
+    if {![dict exists $event summary] && ![dict exists $event title]} {
+        return -code error -errorcode {TICAL SQLITE ARGS} "event requires field: summary"
     }
     
     return 1
 }
 
+# required fields, then tical::event::normalize (accepts starts_at/ends_at)
+proc ::tical::adapter::sqlite::_normalize {event} {
+    _validateEvent $event
+    return [::tical::event::normalize [dict remove $event created_at updated_at]]
+}
+
 proc ::tical::adapter::sqlite::_deserializeEvent {row} {
+    ::set start [dict get $row starts_at]
     ::set event [dict create \
         uid [dict get $row uid] \
-        starts_at [dict get $row starts_at] \
+        dtstart $start \
+        allday [expr {[string length $start] == 8}] \
         summary [dict get $row summary] \
         created_at [dict get $row created_at] \
-        updated_at [dict get $row updated_at]]
+        updated_at [dict get $row updated_at] \
+        starts_at $start]
     
     if {[dict exists $row ends_at] && [dict get $row ends_at] ne ""} {
+        dict set event dtend [dict get $row ends_at]
         dict set event ends_at [dict get $row ends_at]
     }
     
@@ -301,5 +324,5 @@ proc ::tical::adapter::sqlite::_deserializeDict {str} {
     return $dict
 }
 
-package provide tical::adapter::sqlite 1.0
+package provide tical::adapter::sqlite 1.1
 
