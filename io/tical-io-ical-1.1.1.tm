@@ -27,13 +27,25 @@ proc tical::io::ical::exportEvents {events} {
     return "[join $lines "\r\n"]\r\n"
 }
 
-# Exportiert Events in Datei
+# Exportiert Events in Datei. The text is built first (an invalid event
+# raises before anything is opened), then written to a temporary file next
+# to the target and renamed over it: an existing file is never left empty
+# or half written, and no channel stays open on an error.
 proc tical::io::ical::exportToFile {events filename} {
-    ::set f [open $filename w]
-    # exportEvents already joins with CRLF; write it unchanged
-    fconfigure $f -encoding utf-8 -translation lf
-    puts -nonewline $f [exportEvents $events]
+    ::set data [exportEvents $events]
+    ::set tmp "$filename.tmp[pid]"
+    ::set f [open $tmp w]
+    try {
+        # exportEvents already joins with CRLF; write it unchanged
+        fconfigure $f -encoding utf-8 -translation lf
+        puts -nonewline $f $data
+    } on error {msg opts} {
+        catch {close $f}
+        catch {file delete -- $tmp}
+        return -options $opts $msg
+    }
     close $f
+    file rename -force -- $tmp $filename
     return $filename
 }
 

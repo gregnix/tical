@@ -6,6 +6,9 @@
 # (-title, -date, -startTime, -endTime, -allDay, -category) and still
 # present in every record (title, date, startTime, endTime, allDay,
 # category); they will be removed in 1.2.
+# -tzid NAME: zone of local dtstart/dtend (as tical::event and the iCalendar
+# import); kept in the record and in toEvents, and the legacy date/startTime
+# fields are given in the display zone (1.1.1; was an unknown option).
 #   toEvents  -> list of event dicts for getData ... -events
 
 package provide tical::model 1.1.1
@@ -48,10 +51,11 @@ proc ::tical::model::_input {defaults arglist} {
 proc ::tical::model::_record {id type ev extra} {
     set ev [::tical::event::normalize $ev]
     dict set ev uid $id
-    lassign [::tical::event::toLocal [dict get $ev dtstart]] date startTime
+    set tzid [expr {[dict exists $ev tzid] ? [dict get $ev tzid] : ""}]
+    lassign [::tical::event::toLocal [dict get $ev dtstart] {} $tzid] date startTime
     set endTime ""
     if {[dict exists $ev dtend] && ![dict get $ev allday]} {
-        set endTime [lindex [::tical::event::toLocal [dict get $ev dtend]] 1]
+        set endTime [lindex [::tical::event::toLocal [dict get $ev dtend] {} $tzid] 1]
     }
     set rec [dict merge [dict create id $id type $type] $ev $extra]
     # 1.0.1 field names (deprecated)
@@ -69,7 +73,7 @@ proc ::tical::model::_record {id type ev extra} {
 
 proc ::tical::model::createAppointment {args} {
     set in [_input {
-        -summary {} -dtstart {} -dtend {} -allday {}
+        -summary {} -dtstart {} -dtend {} -allday {} -tzid {}
         -title {} -date {} -startTime {} -endTime {}
         -location {} -description {} -reminder 0
     } $args]
@@ -112,7 +116,7 @@ proc ::tical::model::updateAppointment {id args} {
         return -code error -errorcode {TICAL MODEL OPTION} \
             "missing value for option \"[lindex $args end]\""
     }
-    set known {summary dtstart dtend allday categories location description status
+    set known {summary dtstart dtend allday tzid categories location description status
                title date startTime endTime reminder}
     foreach k [dict keys $rec] {
         if {$k ni {id type created uid} && $k ni $known} { lappend known $k }
@@ -185,7 +189,7 @@ proc ::tical::model::getAppointmentsByDate {date} {
 
 proc ::tical::model::createEvent {args} {
     set in [_input {
-        -summary {} -dtstart {} -dtend {} -allday {} -categories {}
+        -summary {} -dtstart {} -dtend {} -allday {} -tzid {} -categories {}
         -title {} -date {} -allDay {} -category {} -color {}
         -location {} -description {}
     } $args]

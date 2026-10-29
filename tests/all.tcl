@@ -24,7 +24,9 @@ set skipped {}; set failed {}
 
 foreach testFile $testFiles {
     set name [file tail $testFile]
-    catch {exec $tcl $testFile} out   ;# child stdout+stderr land in $out
+    # The test files are UTF-8; Tcl 8.6 would read them in the system
+    # encoding (cp1252 on Windows) and turn "Büro" into mojibake.
+    catch {exec $tcl -encoding utf-8 $testFile} out   ;# stdout+stderr in $out
     set summary ""
     foreach line [split $out \n] {
         if {[regexp {Total\s+\d+\s+Passed\s+\d+\s+Skipped\s+\d+\s+Failed\s+\d+} $line]} {
@@ -41,7 +43,10 @@ foreach testFile $testFiles {
             puts [format "  ok    %-22s %d passed%s" $name $P [expr {$S ? ", $S skipped" : ""}]]
             incr okFiles
         }
-    } elseif {[regexp {can't find package (\S+)} $out -> pkg]} {
+    } elseif {[regexp {can't find package (\S+)} $out -> pkg]
+              && [regexp {^(Tk|pdf4tcl|tdbc|tdbc::sqlite3|sqlite3|tclutils::\S+)$} $pkg]} {
+        # only an OPTIONAL package skips a file; a missing tical package
+        # (a broken pkgIndex, say) is a failure
         puts [format "  SKIP  %-22s missing package %s" $name $pkg]
         incr skipFiles; lappend skipped "$name -> $pkg"
     } else {

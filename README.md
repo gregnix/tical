@@ -29,7 +29,7 @@ A modular calendar library for Tcl with support for multiple views, rendering ta
 ✅ **iCalendar Export** - RFC 5545 compliant (VEVENT, RRULE, EXDATE, all-day `VALUE=DATE`)  
 ✅ **iCalendar Import** - `tical::io::import` reads .ics and expands RRULE (optional, needs tclutils)  
 ✅ **SQLite Persistence** - CRUD operations with TDBC (create, read, update, delete)  
-✅ **Tested** - 330 tests across 16 files, all passing (Tcl 8.6/9; Tk, pdf4tcl, tdbc::sqlite3, tclutils) ✅  
+✅ **Tested** - 343 tests across 17 files (Linux: Tcl 8.6 and 9.0; without tdbc::sqlite3 309, see below) ✅  
 ✅ **Demos** - 19 demos (Terminal, Canvas, PDF, PNG, Data, iCal)
 
 ---
@@ -150,7 +150,7 @@ One event format for views, model, iCalendar and SQLite (`tical::event`):
 | `dtend` | end (optional), same kind; all-day: exclusive (day after the last day) |
 | `allday` | `0`/`1`, follows `dtstart` |
 | `uid`, `description`, `location`, `status`, `categories`, `rrule`, `exdate` | optional |
-| `tzid` | optional zone of local times (`Europe/Berlin`, also `/mozilla.org/.../Europe/Berlin` and Windows names such as `W. Europe Standard Time`); converted to the display zone |
+| `tzid` | optional zone of local times (`Europe/Berlin`, also `/mozilla.org/.../Europe/Berlin` and Windows names such as `W. Europe Standard Time`); converted to the display zone; `tical::model` takes `-tzid`, `tical::adapter::sqlite` stores it |
 
 `tical::event::normalize` converts and checks (errors `{TICAL EVENT ...}`);
 for 1.1 it also takes the older names `title`/`date`/`startTime`/`endTime`
@@ -373,20 +373,26 @@ cd tical/tests
 tclsh all.tcl
 ```
 
-**Test files (16 files, 330 tests, all passing):**
-- `core.test` (8), `util.test` (11), `locale.test` (19), `holidays.test` (15), `event.test` (35) — engine basics
+**Test files (17 files, 343 tests):**
+- `core.test` (8), `util.test` (11), `locale.test` (20), `holidays.test` (15), `event.test` (35) — engine basics
 - `view-day.test` (16), `view-week.test` (18), `view-month.test` (19) — view generation
 - `render-term.test` (26), `render-canvas.test` (31), `render-pdf.test` (19) — renderers
-- `io-ical.test` (36) — iCalendar export and `validate`
+- `io-ical.test` (37) — iCalendar export and `validate`
 - `io-import.test` (23) — iCalendar import, RRULE expansion
-- `model.test` (20), `adapter-sqlite.test` (31) — event model + SQLite (TDBC) persistence
+- `model.test` (21), `adapter-sqlite.test` (34) — event model + SQLite (TDBC) persistence
+- `roundtrip.test` (7) — sample files: import, export, import again, expand series
 - `umbrella.test` (3) — umbrella package load
 
 GUI/PDF/DB/import tests need `Tk` / `pdf4tcl` / `tdbc::sqlite3` / tclutils;
 they skip cleanly when those packages are absent (run Tk tests under
 `xvfb-run`). tclutils is found via `TCLUTILS_TM` (its `lib/tm`; empty: none)
-or a sibling checkout `../tclutils/lib/tm`. Measured: Tcl 9.0 with all
-packages 330 passed; Tcl 8.6 without `tdbc::sqlite3` 299 passed.
+or a sibling checkout `../tclutils/lib/tm`. Measured on Linux: with all packages 343 passed
+(Tcl 9.0.4); without `tdbc::sqlite3` 309 passed (Tcl 8.6.14, also with a
+Latin-1 system encoding). Which Tcl version has the SQLite driver depends
+on the installation; the counts depend only on the packages found. Windows and macOS: not run
+for this version. `tests/all.tcl` starts each file with
+`-encoding utf-8`; only a missing optional package (Tk, pdf4tcl, tdbc,
+tclutils) skips a file.
 
 **Test Coverage:**
 - ✅ ISO week number calculation

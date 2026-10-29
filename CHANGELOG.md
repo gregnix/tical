@@ -59,8 +59,12 @@
 - `tical::util` 1.1.1: `expandSelection` rejects dates that do not exist.
 - `tical::model` 1.1.1: unknown options and a missing value are an error
   `{TICAL MODEL OPTION}` in `create…` and `updateAppointment` (were
-  ignored); `updateAppointment` sets `status`, `categories`, `allday`.
-- `tical::adapter::sqlite` 1.1.1: categories and exdate with commas
+  ignored); `updateAppointment` sets `status`, `categories`, `allday`;
+  option `-tzid` in `create…` and `updateAppointment` (was an unknown
+  option); `date`/`startTime` follow the zone.
+- `tical::adapter::sqlite` 1.1.1: `tzid` stored in its own column
+  (was dropped); `migrate` adds it to tables from 1.1; `listRange` reads
+  a local start in its `tzid`. Categories and exdate with commas
   stored escaped (older rows read the same); `listRange db from to ?tz?`
   compares starts as points in time (local and UTC values were compared
   as text) and returns the occurrences of stored series (was the series
@@ -80,8 +84,16 @@
 - Removed leftover files `io/tical-io-ical-1.0.1.tm`,
   `render/tical-render-term-1.0.1.tm`, `views/tical-view-month-1.0.1.tm`.
 - Demos: `demo-week-term`, `demo-day-term` print with `render::term`.
-- Tests: 330 (Tcl 9.0, all optional packages); Tcl 8.6 without
-  `tdbc::sqlite3`: 299.
+- `pkgIndex.tcl` loads every file with `source -encoding utf-8`: under
+  Tcl 8.6 with another system encoding (cp1252 on Windows) month names,
+  holiday names and glyphs were mojibake (`MÃ¤rz`).
+- `tical::io::ical` 1.1.1: `exportToFile` builds the text first and
+  writes through a temporary file (an invalid event left an empty file
+  and an open channel).
+- `tests/all.tcl`: test files with `-encoding utf-8`; a missing tical
+  package is a failure, only optional packages skip a file.
+- Tests: 343 in 17 files (Linux, all optional packages); without
+  `tdbc::sqlite3`: 309, also with a Latin-1 system encoding.
 
 ## 1.1
 

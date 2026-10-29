@@ -208,6 +208,20 @@ test export-2.1 {exportToFile writes plain CRLF (no CR CR LF)} -setup {
     tcltest::removeFile tical-export-2.1.ics
 } -result {-1 1}
 
+test export-2.2 {an invalid event leaves an existing file as it was} -setup {
+    ::set fn [tcltest::makeFile {} tical-export-2.2.ics]
+    ::set ch [open $fn wb]; puts -nonewline $ch "PRECIOUS DATA"; close $ch
+    ::set before [llength [chan names file*]]
+} -body {
+    ::set rc [catch {tical::io::ical::exportToFile \
+        [list {uid u1 dtstart kaputt summary S}] $fn}]
+    ::set ch [open $fn rb]; ::set data [read $ch]; close $ch
+    list $rc $data [expr {[llength [chan names file*]] - $before}] \
+        [llength [glob -nocomplain $fn.tmp*]]
+} -cleanup {
+    tcltest::removeFile tical-export-2.2.ics
+} -result {1 {PRECIOUS DATA} 0 0}
+
 
 test validate-1.1 {local time (no Z) is valid} -body {
     tical::io::ical::validate {uid u1 dtstart 20251014T090000 summary S}

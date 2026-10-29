@@ -419,5 +419,48 @@ test sqlite-9.3 {listRange returns the occurrences of a stored series} -body {
     ::set r
 } -result {{w 20251006T090000} {w 20251013T090000} {e 20251014T120000} {w 20251020T090000} {w 20251027T090000}}
 
+# --- tzid (1.1.1) ---------------------------------------------------------
+
+test sqlite-11.1 {tzid is stored and read back; update keeps it} -body {
+    ::set db [tical::adapter::sqlite::connect ":memory:"]
+    tical::adapter::sqlite::create $db {uid z summary J\u00f6rg dtstart 20251014T090000 tzid Europe/Berlin}
+    ::set a [dict get [tical::adapter::sqlite::read $db z] tzid]
+    tical::adapter::sqlite::update $db z {summary B\u00fcro dtstart 20251014T100000 tzid America/New_York}
+    ::set e [tical::adapter::sqlite::read $db z]
+    tical::adapter::sqlite::create $db {uid n summary N dtstart 20251014T090000}
+    ::set n [dict exists [tical::adapter::sqlite::read $db n] tzid]
+    tical::adapter::sqlite::disconnect $db
+    list $a [dict get $e tzid] [dict get $e summary] $n
+} -result [list Europe/Berlin America/New_York B\u00fcro 0]
+
+test sqlite-11.2 {migrate adds the tzid column to a table from 1.1} -body {
+    ::set db [tdbc::sqlite3::connection new ":memory:"]
+    $db allrows {
+        CREATE TABLE events (uid TEXT PRIMARY KEY, starts_at TEXT NOT NULL,
+            ends_at TEXT, summary TEXT NOT NULL, description TEXT, location TEXT,
+            status TEXT, categories TEXT, rrule TEXT, exdate TEXT,
+            created_at TEXT NOT NULL, updated_at TEXT NOT NULL)
+    }
+    $db allrows {INSERT INTO events (uid, starts_at, summary, created_at, updated_at)
+        VALUES ('alt', '20251014T090000', 'Alt', 'x', 'x')}
+    tical::adapter::sqlite::migrate $db
+    tical::adapter::sqlite::migrate $db
+    tical::adapter::sqlite::create $db {uid neu summary Neu dtstart 20251014T090000 tzid Europe/Berlin}
+    ::set r [list [dict exists [tical::adapter::sqlite::read $db alt] tzid] \
+        [dict get [tical::adapter::sqlite::read $db neu] tzid]]
+    $db close
+    ::set r
+} -result {0 Europe/Berlin}
+
+test sqlite-11.3 {listRange reads a local start in its tzid} -body {
+    ::set db [tical::adapter::sqlite::connect ":memory:"]
+    # 09:00 in New York is 15:00 in Berlin
+    tical::adapter::sqlite::create $db {uid ny summary NY dtstart 20251014T090000 tzid America/New_York}
+    ::set a [llength [tical::adapter::sqlite::listRange $db 20251014T080000 20251014T100000 :Europe/Berlin]]
+    ::set b [lmap e [tical::adapter::sqlite::listRange $db 20251014T143000 20251014T153000 :Europe/Berlin] {dict get $e uid}]
+    tical::adapter::sqlite::disconnect $db
+    list $a $b
+} -result {0 ny}
+
 cleanupTests
 

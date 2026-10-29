@@ -141,5 +141,26 @@ test locale-9.1 {month, weekday and format are checked (1.0.2)} -body {
     tical::config::set locale $old
 } -result {MONTH MONTH DOW FORMAT FORMAT Mai So}
 
+test locale-10.1 {pkgIndex loads the files as UTF-8 whatever the system encoding} -body {
+    # child process with a non-UTF-8 system encoding where a locale decides
+    # it (Windows: cp1252 anyway); before, 8.6 read "März" as "MÃ¤rz"
+    set root [file normalize [file dirname [info script]]/..]
+    set f [file join [temporaryDirectory] locale-101-[pid].tcl]
+    set h [open $f w]
+    puts $h [list lappend auto_path $root]
+    puts $h {package require tical::config; package require tical::locale}
+    puts $h {tical::config::set locale de_DE}
+    puts $h {set m [tical::locale::getMonthName 3]}
+    puts $h {puts "[string length $m] [scan [string index $m 1] %c]"}
+    close $h
+    set saved [array get ::env]
+    set ::env(LC_ALL) C
+    unset -nocomplain ::env(LANG)
+    set r [exec [info nameofexecutable] $f]
+    array unset ::env; array set ::env $saved
+    file delete $f
+    set r
+} -result {4 228}
+
 cleanupTests
 

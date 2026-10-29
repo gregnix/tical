@@ -162,6 +162,21 @@ test model-9.2 {update of status and categories now applies} -body {
     list [dict get $a status] [dict get $a location]
 } -result {CONFIRMED Raum}
 
+test model-10.1 {-tzid is kept; legacy date/time in the display zone (1.1.1)} -setup {
+    tical::model::clearAll
+} -body {
+    set id [tical::model::createEvent -summary NY -dtstart 20251014T090000 \
+        -dtend 20251014T100000 -tzid America/New_York]
+    set ev [tical::model::getEvent $id]
+    set a [tical::model::createAppointment -summary A -dtstart 20251014T090000 -tzid Europe/Berlin]
+    tical::model::updateAppointment $a -tzid America/New_York
+    set ap [tical::model::getAppointment $a]
+    list [dict get $ev tzid] [dict get [lindex [tical::model::toEvents] end] tzid] \
+        [dict get $ap tzid] [string length [dict get $ap startTime]]
+} -cleanup {
+    tical::model::clearAll
+} -result {America/New_York America/New_York America/New_York 5}
+
 cleanupTests
 
 

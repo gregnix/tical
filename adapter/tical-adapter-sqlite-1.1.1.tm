@@ -4,6 +4,8 @@
 # table keeps its columns starts_at/ends_at. For one version (1.1) the
 # fields starts_at/ends_at are still accepted by create/update and still
 # present in what read/listRange/listAll return; they will be removed in 1.2.
+# The zone of local times (key tzid) is stored in its own column; migrate
+# adds the column to a table made by 1.1 (1.1.1; tzid was dropped).
 
 package require Tcl 8.6-
 package require tdbc::sqlite3
@@ -36,11 +38,18 @@ proc ::tical::adapter::sqlite::migrate {db} {
             categories TEXT,
             rrule TEXT,
             exdate TEXT,
+            tzid TEXT,
             created_at TEXT NOT NULL,
             updated_at TEXT NOT NULL
         )
     }
     
+    # tables from 1.1 have no tzid column
+    ::set cols [lmap r [$db allrows {PRAGMA table_info(events)}] {dict get $r name}]
+    if {"tzid" ni $cols} {
+        $db allrows {ALTER TABLE events ADD COLUMN tzid TEXT}
+    }
+
     $db allrows {
         CREATE INDEX IF NOT EXISTS idx_events_start ON events(starts_at)
     }
@@ -60,10 +69,10 @@ proc ::tical::adapter::sqlite::create {db event} {
     ::set stmt [$db prepare {
         INSERT INTO events (
             uid, starts_at, ends_at, summary, description, location,
-            status, categories, rrule, exdate, created_at, updated_at
+            status, categories, rrule, exdate, tzid, created_at, updated_at
         ) VALUES (
             :uid, :starts_at, :ends_at, :summary, :description, :location,
-            :status, :categories, :rrule, :exdate, :created_at, :updated_at
+            :status, :categories, :rrule, :exdate, :tzid, :created_at, :updated_at
         )
     }]
     
@@ -78,6 +87,7 @@ proc ::tical::adapter::sqlite::create {db event} {
         categories [_serializeList [_dictGet $event categories {}]] \
         rrule [_serializeDict [_dictGet $event rrule {}]] \
         exdate [_serializeList [_dictGet $event exdate {}]] \
+        tzid [_dictGet $event tzid ""] \
         created_at $now \
         updated_at $now]
     
@@ -121,6 +131,7 @@ proc ::tical::adapter::sqlite::update {db uid event} {
             categories = :categories,
             rrule = :rrule,
             exdate = :exdate,
+            tzid = :tzid,
             updated_at = :updated_at
         WHERE uid = :uid
     }]
@@ -136,6 +147,7 @@ proc ::tical::adapter::sqlite::update {db uid event} {
         categories [_serializeList [_dictGet $event categories {}]] \
         rrule [_serializeDict [_dictGet $event rrule {}]] \
         exdate [_serializeList [_dictGet $event exdate {}]] \
+        tzid [_dictGet $event tzid ""] \
         updated_at $now]
     
     $stmt execute $data
@@ -168,8 +180,9 @@ proc ::tical::adapter::sqlite::exists {db uid} {
 # Events starting in startDate..endDate. Bounds in any form tical::event
 # accepts (2025-10-01, 20251001, 20251001T090000Z ...); a date as end bound
 # includes that whole day. Dates and local times (bounds and stored values)
-# are read in tz (default: tical::config timezone), UTC values as UTC, so
-# local and UTC starts compare as points in time. A series (rrule) gives
+# are read in tz (default: tical::config timezone), local values with tzid
+# in that zone, UTC values as UTC, so local and UTC starts compare as
+# points in time. A series (rrule) gives
 # its occurrences that start in the range (each with recurrence-id; see
 # tical::event::expand). Sorted by start.
 proc ::tical::adapter::sqlite::listRange {db startDate endDate {tz {}}} {
@@ -196,7 +209,9 @@ proc ::tical::adapter::sqlite::listRange {db startDate endDate {tz {}}} {
 
     ::set keyed {}
     foreach row $rows {
-        ::set e [::tical::event::_epoch [dict get $row starts_at] $tz]
+        # a local start with tzid is a time in that zone
+        ::set src [::tical::event::_src [dict create tzid [_dictGet $row tzid ""]] $tz]
+        ::set e [::tical::event::_epoch [dict get $row starts_at] $tz $src]
         if {$e >= $from && $e <= $to} {
             lappend keyed [list $e [_deserializeEvent $row]]
         }
@@ -286,6 +301,10 @@ proc ::tical::adapter::sqlite::_deserializeEvent {row} {
     
     if {[dict exists $row exdate] && [dict get $row exdate] ne ""} {
         dict set event exdate [_deserializeList [dict get $row exdate]]
+    }
+
+    if {[dict exists $row tzid] && [dict get $row tzid] ne ""} {
+        dict set event tzid [dict get $row tzid]
     }
     
     return $event
