@@ -1,12 +1,12 @@
 # tical - iCalendar Support
 
-**Version:** 1.1  
-**Stand:** 2026-10-27  
+**Version:** 1.1.1  
+**Stand:** 2026-10-28  
 **RFC:** 5545 (Basis-Subset)
 
 ---
 
-## Unterstuetzt (tical 1.1)
+## Unterstuetzt (tical 1.1.1)
 
 ### Komponenten
 - VCALENDAR (Container)
@@ -39,18 +39,26 @@
   laeuft vorher durch `tical::event::normalize` (ISO-Datum, aeltere
   Feldnamen von `tical::model`/`tical::adapter::sqlite`).
 - Import (optional): `tical::io::import` mit tclutils (`tclutils::tuical`
-  liest, `tclutils::turrule` loest RRULE auf). Gelesen werden UID, SUMMARY,
+  liest; RRULE loest seit 1.1.1 `tical::event::expand` auf, das auch die
+  Views benutzen). Gelesen werden UID, SUMMARY,
   DESCRIPTION, LOCATION, STATUS, CATEGORIES, DTSTART/DTEND (VALUE=DATE),
   DURATION, RRULE, EXDATE, RECURRENCE-ID. Ergebnis: Termine im Format von
-  `tical::event`. RRULE-Teile, die turrule nicht kennt (BYSETPOS,
+  `tical::event`. RRULE-Teile, die tical nicht kennt (BYSETPOS,
   BYWEEKNO, BYYEARDAY, BYHOUR ...), sind ein Fehler `{TICAL IMPORT RRULE}`.
 
 ### Zeitzonen
 - UTC (mit Z-Suffix, z.B. 20251014T090000Z), empfohlen
 - Zeiten werden unveraendert geschrieben; ohne Z gelten sie als lokale
   ("floating") Zeit, eine Umrechnung findet nicht statt
-- Import: `TZID` bleibt als Schluessel `tzid` erhalten, die Uhrzeit gilt
-  als lokale Zeit
+- Import: `TZID` bleibt als Schluessel `tzid` erhalten, mit der Uhrzeit
+  dieser Zone; `tical::event` und die Views rechnen sie in die
+  Anzeigezone um. Serien werden in ihrer Zone aufgeloest (Sommerzeit).
+  Verstanden werden IANA-Namen, Praefix-IDs (`/mozilla.org/.../Europe/Berlin`)
+  und gaengige Windows-Namen (`W. Europe Standard Time`); eine unbekannte
+  TZID (eigene VTIMEZONE) laesst die Zeit als lokale Zeit stehen.
+- Export: lokale Zeiten mit `tzid` bekommen `TZID=` (IANA-Name, ohne
+  VTIMEZONE-Komponente); `recurrence-id` wird `RECURRENCE-ID`, eine
+  verschobene Instanz bleibt beim Wiedereinlesen eine Ausnahme der Serie
 
 ---
 
@@ -77,7 +85,7 @@
 
 ### Zeitzonen
 - VTIMEZONE Komponenten
-- TZID beim Export; beim Import ohne Umrechnung
+- VTIMEZONE beim Export; eigene VTIMEZONE-Regeln beim Import
 - Zeitzone-Regeln
 - DST (Sommerzeit/Winterzeit)
 
@@ -140,7 +148,7 @@ tical::io::ical::exportToFile $events "recurring.ics"
 ```
 BEGIN:VCALENDAR
 VERSION:2.0
-PRODID:-//tical//tical 1.1//EN
+PRODID:-//tical//tical 1.1.1//EN
 CALSCALE:GREGORIAN
 METHOD:PUBLISH
 BEGIN:VEVENT

@@ -96,6 +96,16 @@ test view-day-6.2 {-events: event from the day before ends in the morning} -body
          [lmap c [dict get $s cells] {lmap e [dict get $c events] {dict get $e part}}]
 } -result {end {middle end {} {}}}
 
+test view-day-9.1 {-hourStart after -hourEnd is an error} -body {
+    catch {tical::view::day::getData -date 2025-02-14 -hourStart 10 -hourEnd 8} m o
+    list $m [dict get $o -errorcode]
+} -result {{view::day::getData: -hourStart 10 is after -hourEnd 8} {TICAL VIEW OPTION}}
+
+test view-day-9.2 {-date in basic form; invalid date is a view error} -body {
+    list [dict get [tical::view::day::getData -date 20250214] date] \
+         [catch {tical::view::day::getData -date 2025-02-30} m o] [dict get $o -errorcode] $m
+} -result {2025-02-14 1 {TICAL VIEW OPTION} {view::day::getData: -date must be a date (YYYY-MM-DD or YYYYMMDD), got "2025-02-30"}}
+
 cleanupTests
 
 

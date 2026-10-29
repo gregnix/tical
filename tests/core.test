@@ -31,4 +31,40 @@ test core-3.2 {weekNumber: bad firstWeek} -body {
     list $m [dict get $opt -errorcode]
 } -result {{bad firstWeek "nix": must be iso, simple or us} {TICAL CORE FIRSTWEEK}}
 
+# --- tical::config 1.0.2 ------------------------------------------------------
+
+test config-1.1 {unknown key and bad values are errors; value unchanged} -body {
+    ::set r {}
+    foreach {k v} {weekStart sun timezone Mars/Base weekstart sonntag firstweek iso8601
+                   theme bunt today 2025-02-30 locale xx_YY} {
+        catch {tical::config::set $k $v} m o
+        lappend r [lindex [dict get $o -errorcode] 2]
+    }
+    list $r [tical::config::get weekstart] [tical::config::get timezone]
+} -result {{KEY VALUE VALUE VALUE VALUE VALUE VALUE} mon Europe/Berlin}
+
+test config-1.2 {good values: other locale of a known language, monday, :localtime} -body {
+    ::set old [list [tical::config::get locale] [tical::config::get weekstart] [tical::config::get timezone]]
+    ::set r [list [tical::config::set locale en_GB] [tical::config::set weekstart Monday] \
+                  [tical::config::set timezone :localtime]]
+    lassign $old l w z
+    tical::config::set locale $l; tical::config::set weekstart $w; tical::config::set timezone $z
+    ::set r
+} -result {en_GB Monday :localtime}
+
+test config-1.3 {today: marks the day in core, month, week and day} -setup {
+    tical::config::set today 2025-10-14
+    package require tical::view::month; package require tical::view::week; package require tical::view::day
+} -body {
+    ::set c [lsearch -inline -index 1 [lmap d [dict get [tical::core::calendarData -year 2025 -month 10] days] {list [dict get $d isToday] [dict get $d date]}] 2025-10-14]
+    ::set m [lmap x [dict get [tical::view::month::getData -year 2025 -month 10] cells] {
+        if {"today" in [dict get $x markers]} { dict get $x date } else continue }]
+    ::set w [lmap x [dict get [tical::view::week::getData -date 2025-10-14] cells] {
+        if {"today" in [dict get $x markers]} { dict get $x date } else continue }]
+    ::set d [dict get [lindex [dict get [tical::view::day::getData -date 2025-10-14] cells] 0] markers]
+    list $c $m $w $d [tical::config::today]
+} -cleanup {
+    tical::config::set today ""
+} -result {{1 2025-10-14} 2025-10-14 2025-10-14 today 2025-10-14}
+
 cleanupTests

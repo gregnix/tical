@@ -1,4 +1,4 @@
-package provide tical::util 1.1
+package provide tical::util 1.1.1
 package require Tcl 8.6-
 
 namespace eval tical::util {
@@ -43,13 +43,20 @@ proc tical::util::dateRange {a b {tz UTC}} {
 }
 
 # Expand a selection spec (list of YYYY-MM-DD and YYYY-MM-DD..YYYY-MM-DD ranges)
-# into a sorted, unique list of ISO dates.
+# into a sorted, unique list of ISO dates. A date that does not exist
+# (2025-02-30) is an error like a malformed entry.
+proc tical::util::_realDate {d} {
+    return [expr {![catch {clock scan $d -format %Y-%m-%d -gmt 1} t]
+        && [clock format $t -format %Y-%m-%d -gmt 1] eq $d}]
+}
+
 proc tical::util::expandSelection {spec {tz UTC}} {
     set out {}
     foreach tok $spec {
-        if {[regexp {^(\d{4}-\d{2}-\d{2})\.\.(\d{4}-\d{2}-\d{2})$} $tok -> x y]} {
+        if {[regexp {^(\d{4}-\d{2}-\d{2})\.\.(\d{4}-\d{2}-\d{2})$} $tok -> x y]
+                && [_realDate $x] && [_realDate $y]} {
             foreach d [dateRange $x $y $tz] { dict set out $d 1 }
-        } elseif {[regexp {^\d{4}-\d{2}-\d{2}$} $tok]} {
+        } elseif {[regexp {^\d{4}-\d{2}-\d{2}$} $tok] && [_realDate $tok]} {
             dict set out $tok 1
         } else {
             return -code error -errorcode {TICAL UTIL SELECTION} \

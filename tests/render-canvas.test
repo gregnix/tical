@@ -278,5 +278,39 @@ test canvas-event-3 {day: all-day line and titles in the hour rows} -body {
     ::set r
 } -result {{09:00 Call} Urlaub}
 
+test canvas-9.1 {setCallback per canvas wins over the global one; removed with the canvas} -body {
+    destroy .cb1 .cb2
+    canvas .cb1; canvas .cb2
+    ::set ::clicks {}
+    tical::render::canvas::setCallback {apply {{w d} {lappend ::clicks global $w $d}}}
+    tical::render::canvas::setCallback .cb1 {apply {{w d} {lappend ::clicks own $w $d}}}
+    tical::render::canvas::onDayClick .cb1 2025-10-05
+    tical::render::canvas::onDayClick .cb2 2025-10-06
+    destroy .cb1
+    canvas .cb1
+    tical::render::canvas::onDayClick .cb1 2025-10-07
+    ::set ::clicks
+} -cleanup {
+    tical::render::canvas::setCallback {}
+    destroy .cb1 .cb2
+} -result {own .cb1 2025-10-05 global .cb2 2025-10-06 global .cb1 2025-10-07}
+
+test canvas-9.2 {week numbers stay two digits on the canvas} -body {
+    destroy .wk; canvas .wk -width 600 -height 400
+    tical::render::canvas::draw .wk [tical::view::month::getData -year 2026 -month 1] -weekNumbers 1
+    ::set t {}
+    foreach i [.wk find all] {
+        if {[.wk type $i] eq "text" && [regexp {^\d\d$} [.wk itemcget $i -text]]} {
+            lappend t [.wk itemcget $i -text]
+        }
+    }
+    expr {"01" in $t && "02" in $t}
+} -cleanup { destroy .wk } -result 1
+
+test canvas-9.3 {setCallback with a parameter list and a body is an error} -body {
+    list [catch {tical::render::canvas::setCallback {w date} {puts $date}} m o] [dict get $o -errorcode] \
+         [catch {tical::render::canvas::setCallback a b c} m o] [dict get $o -errorcode]
+} -result {1 {TICAL RENDER ARGS} 1 {TICAL RENDER ARGS}}
+
 cleanupTests
 

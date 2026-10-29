@@ -8,9 +8,9 @@
 # category); they will be removed in 1.2.
 #   toEvents  -> list of event dicts for getData ... -events
 
-package provide tical::model 1.1
+package provide tical::model 1.1.1
 package require Tcl 8.6-
-package require tical::event 1.1
+package require tical::event 1.1.1
 
 namespace eval ::tical::model {
     namespace export createAppointment createEvent toEvents
@@ -22,9 +22,20 @@ namespace eval ::tical::model {
     array set events {}
 }
 
-# option list -> event input dict (keys without "-"; empty values dropped)
+# option list -> event input dict (keys without "-"; empty values dropped).
+# Unknown options and a missing value: error {TICAL MODEL OPTION}.
 proc ::tical::model::_input {defaults arglist} {
     array set o $defaults
+    if {[llength $arglist] % 2} {
+        return -code error -errorcode {TICAL MODEL OPTION} \
+            "missing value for option \"[lindex $arglist end]\""
+    }
+    foreach {k v} $arglist {
+        if {![info exists o($k)]} {
+            return -code error -errorcode {TICAL MODEL OPTION} \
+                "unknown option \"$k\", must be [join [lsort [dict keys $defaults]] {, }]"
+        }
+    }
     array set o $arglist
     set in {}
     foreach k [array names o] {
@@ -87,8 +98,8 @@ proc ::tical::model::getAppointment {id} {
 }
 
 # Update fields: event fields (-summary, -dtstart ...) or, for 1.1, the
-# older ones (-title, -date, -startTime, -endTime). Unknown fields are
-# ignored as before.
+# older ones (-title, -date, -startTime, -endTime). Unknown fields and a
+# missing value are an error {TICAL MODEL OPTION} (were ignored up to 1.1).
 proc ::tical::model::updateAppointment {id args} {
     variable appointments
     if {![info exists appointments($id)]} {
@@ -97,17 +108,28 @@ proc ::tical::model::updateAppointment {id args} {
     set rec $appointments($id)
     set core [dict remove $rec id type title date startTime endTime reminder created]
     set legacy [dict create]
+    if {[llength $args] % 2} {
+        return -code error -errorcode {TICAL MODEL OPTION} \
+            "missing value for option \"[lindex $args end]\""
+    }
+    set known {summary dtstart dtend allday categories location description status
+               title date startTime endTime reminder}
+    foreach k [dict keys $rec] {
+        if {$k ni {id type created uid} && $k ni $known} { lappend known $k }
+    }
+    foreach {key val} $args {
+        if {[string trimleft $key -] ni $known} {
+            return -code error -errorcode {TICAL MODEL OPTION} \
+                "unknown option \"$key\", must be -[join [lsort $known] {, -}]"
+        }
+    }
     foreach {key val} $args {
         set field [string trimleft $key -]
         switch -- $field {
             title { dict set core summary $val }
             date - startTime - endTime { dict set legacy $field $val }
             reminder { dict set rec reminder $val }
-            default {
-                if {[dict exists $rec $field] || $field in {dtend description location}} {
-                    dict set core $field $val
-                }
-            }
+            default { dict set core $field $val }
         }
     }
     if {[dict size $legacy]} {

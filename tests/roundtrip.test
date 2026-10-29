@@ -1,0 +1,66 @@
+# Round trips with the files in data/roundtrip: import, export, import
+# again; series expanded. tical keeps the event core (summary, times, time
+# zone, uid, description, location, rrule, exdate, status); alarms,
+# attendees, organizer, X- properties and to-dos are not part of the model.
+package require tcltest
+set rootDir [file dirname [file dirname [file normalize [info script]]]]
+lappend auto_path $rootDir
+if {[info exists ::env(TCLUTILS_TM)]} {
+    if {$::env(TCLUTILS_TM) ne ""} { tcl::tm::path add $::env(TCLUTILS_TM) }
+} elseif {[file isdirectory [file join [file dirname $rootDir] tclutils lib tm]]} {
+    tcl::tm::path add [file join [file dirname $rootDir] tclutils lib tm]
+}
+package require tical::io::import 1.1
+package require tical::io::ical 1.1
+
+namespace import tcltest::*
+
+set ::RT [file join [file dirname [file normalize [info script]]] data roundtrip]
+proc rtText {name} {
+    set ch [open [file join $::RT $name] rb]
+    set d [encoding convertfrom utf-8 [read $ch]]
+    close $ch
+    return $d
+}
+# events without the export time stamp
+proc rtCore {events} { return [lmap e $events {dict remove $e dtstamp}] }
+
+foreach f {google outlook thunderbird} {
+    test roundtrip-$f.1 "$f.ics: import, export, import gives the same events" -body {
+        set a [tical::io::import::parse [rtText $f.ics]]
+        set b [tical::io::import::parse [tical::io::ical::exportEvents $a]]
+        expr {[rtCore $a] eq [rtCore $b]}
+    } -result 1
+}
+
+test roundtrip-google.2 {google.ics: weekly, three times, escapes decoded} -body {
+    set evs [tical::io::import::parse [rtText google.ics]]
+    set e [lindex $evs 0]
+    list [llength $evs] [dict get $e summary] [dict get $e location] \
+        [dict get $e description] \
+        [lmap o [tical::io::import::expand $evs 2026-10-01 2027-03-31] {dict get $o dtstart}]
+} -result [list 1 Projektbesprechung {Büro; Raum 2} "Zeile eins\nZeile zwei, mit Komma" \
+    {20261103T090000Z 20261110T090000Z 20261117T090000Z}]
+
+test roundtrip-outlook.2 {outlook.ics: local time stays in Europe/Berlin} -body {
+    set evs [tical::io::import::parse [rtText outlook.ics]]
+    set e [lindex $evs 0]
+    set out [tical::io::ical::exportEvents $evs]
+    list [dict get $e dtstart] [dict get $e tzid] \
+        [regexp {DTSTART;TZID=Europe/Berlin:20261105T140000\r\n} $out]
+} -result {20261105T140000 Europe/Berlin 1}
+
+test roundtrip-thunderbird.2 {thunderbird.ics: monthly, three nominal, one excluded} -body {
+    set evs [tical::io::import::parse [rtText thunderbird.ics]]
+    set e [lindex $evs 0]
+    list [llength $evs] [dict get $e allday] [dict get $e exdate] \
+        [lmap o [tical::io::import::expand $evs 2026-10-01 2027-03-31] {dict get $o dtstart}]
+} -result {1 1 20261201 {20261101 20270101}}
+
+test roundtrip-crlf {exportEvents ends every line with CRLF, the last one too} -body {
+    set out [tical::io::ical::exportEvents \
+        [tical::io::import::parse [rtText google.ics]]]
+    list [string range $out end-14 end] [regexp {[^\r]\n} $out]
+} -result [list "END:VCALENDAR\r\n" 0]
+
+cleanupTests

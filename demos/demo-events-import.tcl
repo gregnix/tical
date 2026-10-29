@@ -1,7 +1,7 @@
 #!/usr/bin/env tclsh
 # Termine aus einer iCalendar-Datei lesen, Wiederholungen fuer Oktober 2025
 # aufloesen und im Monatskalender zeigen (Terminal, mit pdf4tcl auch PDF).
-# Braucht tclutils (tuical, turrule) fuer tical::io::import.
+# Braucht tclutils (tuical) fuer tical::io::import.
 
 # --- locate the tical engine (pkgIndex.tcl at the repo root) -----------------
 set here [file dirname [file normalize [info script]]]
@@ -23,7 +23,7 @@ package require tical::holidays::de 1.0
 package require tical::view::month 1.1
 package require tical::render::term 1.1
 if {[catch {package require tical::io::import 1.1} err]} {
-    puts "tical::io::import braucht tclutils (tuical, turrule): $err"
+    puts "tical::io::import braucht tclutils (tuical): $err"
     puts "TCLUTILS_TM auf das Verzeichnis tclutils/lib/tm setzen."
     exit 0
 }

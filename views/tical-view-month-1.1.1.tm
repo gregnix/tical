@@ -1,9 +1,9 @@
 package require tical::core 1.1
-package require tical::config 1.0
+package require tical::config 1.0.2
 package require tical::util 1.1
-package require tical::event 1.1
+package require tical::event 1.1.1
 
-package provide tical::view::month 1.1
+package provide tical::view::month 1.1.1
 package require Tcl 8.6-
 
 namespace eval tical::view::month {
@@ -29,6 +29,16 @@ proc tical::view::month::getData {args} {
     if {[dict get $o -year] eq {} || [dict get $o -month] eq {}} {
         return -code error -errorcode {TICAL VIEW ARGS} \
             "view::month::getData: -year and -month are required"
+    }
+    set y [dict get $o -year]
+    if {![regexp {^\d{4}$} $y]} {
+        return -code error -errorcode {TICAL VIEW OPTION} \
+            "view::month::getData: -year must be a four-digit year, got \"$y\""
+    }
+    set m [dict get $o -month]
+    if {![regexp {^\d{1,2}$} $m] || [scan $m %d] < 1 || [scan $m %d] > 12} {
+        return -code error -errorcode {TICAL VIEW OPTION} \
+            "view::month::getData: -month must be 1..12, got \"$m\""
     }
     # -count N (N > 1): list of N consecutive month ViewSpecs, starting at
     # -year/-month (rolls over into the following year). -count 1 (default)
@@ -154,7 +164,7 @@ proc ::tical::view::month::_adjCell {date tz firstWeek} {
     set ts [clock scan "$date 12:00:00" -timezone $tz]
     return [dict create date $date inMonth 0 \
         dow [clock format $ts -format %u -timezone $tz] \
-        week [format %02d [::tical::core::weekNumber $ts $tz $firstWeek]] \
+        week [::tical::core::weekNumber $ts $tz $firstWeek] \
         markers {} events {}]
 }
 

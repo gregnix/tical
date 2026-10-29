@@ -49,9 +49,37 @@ proc ::tical::render::canvas::init {{fontsize 12}} {
     ]
 }
 
-proc ::tical::render::canvas::setCallback {callback} {
+# Day-click callback (command prefix, called with the canvas and the date,
+# in select mode "none"):
+#   setCallback CMD      for every canvas (as up to 1.1)
+#   setCallback W CMD    for canvas W only; it wins over the global one;
+#                        "" removes it. Removed with the canvas.
+proc ::tical::render::canvas::setCallback {args} {
     variable onDayClickCallback
-    set onDayClickCallback $callback
+    variable state
+    switch -- [llength $args] {
+        1 { set onDayClickCallback [lindex $args 0] }
+        2 {
+            lassign $args w cmd
+            if {![string match .* $w]} {
+                # the old mistake: setCallback {w date} {body}
+                return -code error -errorcode {TICAL RENDER ARGS} \
+                    "setCallback: \"$w\" is not a widget path; pass one command\
+                    prefix (setCallback CMD) or a canvas and one (setCallback .c CMD)"
+            }
+            if {$cmd eq ""} { unset -nocomplain state($w,click); return }
+            set state($w,click) $cmd
+            if {[winfo exists $w] && ![info exists state($w,bound)]} {
+                bind $w <Destroy> +[list ::tical::render::canvas::_cleanup %W]
+                set state($w,bound) 1
+            }
+        }
+        default {
+            return -code error -errorcode {TICAL RENDER ARGS} \
+                "wrong # args: should be \"setCallback ?w? callback\""
+        }
+    }
+    return
 }
 
 # Options: -interactive 0|1, -fontsize N, -weekNumbers 0|1. Unknown options
@@ -155,7 +183,7 @@ proc ::tical::render::canvas::drawMonth {w viewSpec optsName} {
         if {$o(-weekNumbers) && $col == 0 && [set week [::tical::util::rowWeek $cells [expr {$row * 7}]]] ne ""} {
             set weekX [expr {$leftW * 0.6}]
             set weekY [expr {$y + $cellH / 2}]
-            $w create text $weekX $weekY -text $week \
+            $w create text $weekX $weekY -text [format %02d $week] \
                 -anchor center -font $fontDay -fill gray -tags weeknr
         }
         
@@ -229,8 +257,11 @@ proc ::tical::render::canvas::onDayClick {w date {shift 0}} {
     if {$date eq ""} return
 
     if {$mode eq "none"} {
-        # legacy: just notify, no persistent selection
-        if {[info exists onDayClickCallback] && $onDayClickCallback ne ""} {
+        # just notify, no persistent selection; the canvas's own callback
+        # wins over the global one
+        if {[info exists state($w,click)]} {
+            uplevel #0 [list {*}$state($w,click) $w $date]
+        } elseif {[info exists onDayClickCallback] && $onDayClickCallback ne ""} {
             uplevel #0 [list {*}$onDayClickCallback $w $date]
         }
         return
@@ -594,6 +625,6 @@ proc ::tical::render::canvas::_drawEventTitles {w cellData x y width maxLines ta
     }
 }
 
-package provide tical::render::canvas 1.1
+package provide tical::render::canvas 1.1.1
 package require Tcl 8.6-
 

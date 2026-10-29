@@ -66,12 +66,12 @@ test view-month-5.1 {-firstWeek: week of the first row in January 2023} -body {
         ::set s [tical::view::month::getData -year 2023 -month 1 -weekStart sun -firstWeek $fw]
         dict get [lindex [dict get $s cells] 0] week
     }
-} -result {52 01 01}
+} -result {52 1 1}
 
 test view-month-5.2 {-firstWeek us: week 1 from January 1, Sunday starts week 2 (2025)} -body {
     ::set s [tical::view::month::getData -year 2025 -month 1 -weekStart sun -firstWeek us]
     lmap c [lrange [dict get $s cells] 0 13] {dict get $c week}
-} -result {53 53 53 01 01 01 01 02 02 02 02 02 02 02}
+} -result {53 53 53 1 1 1 1 2 2 2 2 2 2 2}
 
 test view-month-5.3 {-firstWeek follows tical::config firstweek} -setup {
     ::set old [tical::config::get firstweek]
@@ -119,5 +119,12 @@ test view-month-6.4 {-events: tical::model record of 1.0.1 accepted} -body {
     ::set e [lindex [dict get [lindex [dict get $s cells] 15] events] 0]
     list [dict get $e summary] [dict get $e time] [dict get $e uid]
 } -result {Meeting 10:00 appt-1}
+
+test view-month-9.1 {-month outside 1..12 and a bad -year are view errors} -body {
+    lmap a {{-year 2025 -month 13} {-year 2025 -month 0} {-year 2025 -month x} {-year 99 -month 1}} {
+        catch {tical::view::month::getData {*}$a} m o
+        dict get $o -errorcode
+    }
+} -result {{TICAL VIEW OPTION} {TICAL VIEW OPTION} {TICAL VIEW OPTION} {TICAL VIEW OPTION}}
 
 cleanupTests

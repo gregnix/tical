@@ -439,7 +439,8 @@ puts $ics
 
 ## Import (tical::io::import, optional)
 
-Braucht tclutils (`tclutils::tuical`, `tclutils::turrule`).
+Braucht tclutils (`tclutils::tuical`). Serien rechnet `tical::event::expand`
+aus (seit 1.1.1; vorher `tclutils::turrule`).
 
 | Aufruf | Ergebnis |
 |---|---|
@@ -479,6 +480,6 @@ set spec [tical::view::month::getData -year 2025 -month 10 -events $evs]
 
 ---
 
-**Version:** 1.1  
+**Version:** 1.1.1  
 **Package:** tical::io::ical, tical::io::import  
 **Requires:** Tcl 8.6+

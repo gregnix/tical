@@ -87,12 +87,10 @@ test locale-4.3 {getWeekdayNames with format 2} -setup {
     tical::locale::getWeekdayNames 2
 } -result {Mo Di Mi Do Fr Sa So}
 
-test locale-5.1 {Fallback to English for unknown locale} -setup {
-    tical::config::set locale xx_XX
-} -body {
-    list [tical::locale::getMonthName 1] \
-         [tical::locale::getWeekdayName 1]
-} -result {January Monday}
+test locale-5.1 {unknown locale is an error of tical::config::set (1.0.2)} -body {
+    list [catch {tical::config::set locale xx_XX} m o] [dict get $o -errorcode] \
+         [tical::config::get locale]
+} -result {1 {TICAL CONFIG VALUE} de_DE}
 
 test locale-6.1 {getSupportedLocales} -body {
     llength [tical::locale::getSupportedLocales]
@@ -128,6 +126,20 @@ test locale-5.4 {config: unknown key, errorcode} -body {
     catch {tical::config::get nix} m opt
     list $m [dict get $opt -errorcode]
 } -result {{unknown key: nix} {TICAL CONFIG KEY}}
+
+test locale-9.1 {month, weekday and format are checked (1.0.2)} -body {
+    ::set r {}
+    foreach c {{getMonthName 13} {getMonthName 0} {getWeekdayName 8} {getMonthNames xyz} {getWeekdayNames xyz}} {
+        catch {tical::locale::[lindex $c 0] {*}[lrange $c 1 end]} m o
+        lappend r [lindex [dict get $o -errorcode] 2]
+    }
+    lappend r [tical::locale::getMonthName 05] [tical::locale::getWeekdayName 07 short]
+} -setup {
+    ::set old [tical::config::get locale]
+    tical::config::set locale de_DE
+} -cleanup {
+    tical::config::set locale $old
+} -result {MONTH MONTH DOW FORMAT FORMAT Mai So}
 
 cleanupTests
 

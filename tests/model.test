@@ -142,6 +142,26 @@ test model-2.6 {toEvents feeds getData -events} -body {
     llength [dict get [lindex [dict get $s cells] 15] events]
 } -result 1
 
+test model-9.1 {unknown option and missing value are errors (1.1.1)} -body {
+    tical::model::clearAll
+    ::set id [tical::model::createAppointment -summary A -dtstart 2025-10-14T09:00]
+    ::set r {}
+    foreach a {{-sumary B} {-summary}} {
+        catch {tical::model::updateAppointment $id {*}$a} m o
+        lappend r [dict get $o -errorcode]
+    }
+    catch {tical::model::createAppointment -summary C -dtstart 2025-10-14 -loction X} m o
+    lappend r [dict get $o -errorcode] [dict get [tical::model::getAppointment $id] summary]
+} -result {{TICAL MODEL OPTION} {TICAL MODEL OPTION} {TICAL MODEL OPTION} A}
+
+test model-9.2 {update of status and categories now applies} -body {
+    tical::model::clearAll
+    ::set id [tical::model::createAppointment -summary A -dtstart 2025-10-14T09:00]
+    tical::model::updateAppointment $id -status CONFIRMED -location Raum
+    ::set a [tical::model::getAppointment $id]
+    list [dict get $a status] [dict get $a location]
+} -result {CONFIRMED Raum}
+
 cleanupTests
 
 

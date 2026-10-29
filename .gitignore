@@ -9,5 +9,8 @@ demos/out/*
 # sample input of demo-events-import.tcl
 !demos/data/*.ics
 
+# round-trip test files
+!tests/data/roundtrip/*.ics
+
 # internal development notes (not published)
 nogit/

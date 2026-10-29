@@ -1,16 +1,20 @@
-package provide tical::io::ical 1.1
+package provide tical::io::ical 1.1.1
 package require Tcl 8.6-
-package require tical::event 1.1
+package require tical::event 1.1.1
 
 namespace eval tical::io::ical {
-    variable prodid "-//tical//tical 1.1//EN"
+    variable prodid "-//tical//tical 1.1.1//EN"
     namespace export exportEvents exportToFile validate makeEvent
 }
 
 # Export events as an iCalendar string. Each event goes through
 # tical::event::normalize first, so the older field names (tical::model,
 # tical::adapter::sqlite) and ISO dates are accepted; all-day events
-# (date values) are written with VALUE=DATE.
+# (date values) are written with VALUE=DATE. Local times of an event with
+# tzid get a TZID parameter (the IANA name when Tcl knows the zone, e.g.
+# DTSTART;TZID=Europe/Berlin:20251006T180000); no VTIMEZONE is written. An
+# event with recurrence-id (an override, or an occurrence from expand) is
+# written with RECURRENCE-ID.
 proc tical::io::ical::exportEvents {events} {
     ::set lines [list "BEGIN:VCALENDAR" "VERSION:2.0" \
                     "PRODID:${::tical::io::ical::prodid}" \
@@ -19,7 +23,8 @@ proc tical::io::ical::exportEvents {events} {
         lappend lines {*}[BuildVEVENT [::tical::event::normalize $event]]
     }
     lappend lines "END:VCALENDAR"
-    return [join $lines "\r\n"]
+    # every content line ends with CRLF, the last one too (RFC 5545 3.1)
+    return "[join $lines "\r\n"]\r\n"
 }
 
 # Exportiert Events in Datei
@@ -65,6 +70,7 @@ proc tical::io::ical::validate {event} {
     if {[dict exists $event rrule]} {
         BuildRRULE [::tical::event::rrule [dict get $event rrule]]
     }
+    if {[dict exists $event status]} { CheckStatus [dict get $event status] }
     return 1
 }
 
@@ -83,12 +89,17 @@ proc tical::io::ical::BuildVEVENT {event} {
     if {![dict exists $event uid] || [dict get $event uid] eq ""} {
         dict set event uid [GenerateUID]
     }
-    lappend lines "UID:[dict get $event uid]"
+    lappend lines [FormatProperty UID [dict get $event uid]]
     lappend lines "DTSTAMP:[GetTimestamp]"
-    lappend lines [FormatProperty DTSTART [dict get $event dtstart]]
+    ::set tzid ""
+    if {[dict exists $event tzid] && [dict get $event tzid] ne ""} {
+        ::set tzid [string trimleft [::tical::event::tzid [dict get $event tzid]] :]
+        if {$tzid eq ""} { ::set tzid [dict get $event tzid] }
+    }
+    lappend lines [FormatProperty DTSTART [dict get $event dtstart] $tzid]
     
     if {[dict exists $event dtend]} {
-        lappend lines [FormatProperty DTEND [dict get $event dtend]]
+        lappend lines [FormatProperty DTEND [dict get $event dtend] $tzid]
     } elseif {[dict exists $event duration]} {
         lappend lines "DURATION:[dict get $event duration]"
     }
@@ -102,22 +113,50 @@ proc tical::io::ical::BuildVEVENT {event} {
         lappend lines [FormatProperty LOCATION [dict get $event location]]
     }
     if {[dict exists $event status]} {
-        lappend lines "STATUS:[dict get $event status]"
+        lappend lines "STATUS:[CheckStatus [dict get $event status]]"
     }
     if {[dict exists $event categories]} {
-        lappend lines "CATEGORIES:[join [dict get $event categories] ,]"
+        lappend lines [FoldLine "CATEGORIES:[join [lmap c [dict get $event categories] {Escape $c}] ,]"]
     }
     if {[dict exists $event rrule]} {
-        lappend lines "RRULE:[BuildRRULE [dict get $event rrule]]"
+        ::set rr [dict get $event rrule]
+        # RFC 5545: with DTSTART;TZID=... UNTIL must be UTC
+        ::set zone [expr {$tzid ne "" ? [::tical::event::tzid $tzid] : ""}]
+        if {$zone ne "" && [dict exists $rr until]
+                && [::tical::event::valueKind [dict get $event dtstart]] eq "local"} {
+            ::set u [::tical::event::normalizeValue [dict get $rr until] until]
+            if {[string length $u] == 8} { append u T235959 }
+            if {[string index $u end] ne "Z"} {
+                ::set t [clock scan $u -format %Y%m%dT%H%M%S -timezone $zone]
+                dict set rr until [clock format $t -format %Y%m%dT%H%M%SZ -gmt 1]
+            }
+        }
+        lappend lines "RRULE:[BuildRRULE $rr]"
+    }
+    if {[dict exists $event recurrence-id] && [dict get $event recurrence-id] ne ""} {
+        # override of one occurrence: same UID, the occurrence it replaces
+        ::set rid [::tical::event::normalizeValue [dict get $event recurrence-id] recurrence-id]
+        lappend lines [FormatProperty RECURRENCE-ID $rid $tzid]
     }
     if {[dict exists $event exdate]} {
         foreach exdate [dict get $event exdate] {
-            lappend lines [FormatProperty EXDATE $exdate]
+            lappend lines [FormatProperty EXDATE $exdate $tzid]
         }
     }
     
     lappend lines "END:VEVENT"
     return $lines
+}
+
+# STATUS of a VEVENT (RFC 5545): TENTATIVE, CONFIRMED, CANCELLED (any
+# case, written upper case); other values: error {TICAL ICAL STATUS}.
+proc tical::io::ical::CheckStatus {status} {
+    ::set s [string toupper $status]
+    if {$s ni {TENTATIVE CONFIRMED CANCELLED}} {
+        return -code error -errorcode {TICAL ICAL STATUS} \
+            "bad status \"$status\": must be TENTATIVE, CONFIRMED or CANCELLED"
+    }
+    return $s
 }
 
 # Baut RRULE String
@@ -166,10 +205,14 @@ proc tical::io::ical::BuildRRULE {rruleDict} {
 }
 
 # Formatiert Property mit Escaping
-proc tical::io::ical::FormatProperty {name value} {
-    if {$name in {DTSTART DTEND EXDATE RDATE}} {
+proc tical::io::ical::FormatProperty {name value {tzid {}}} {
+    if {$name in {DTSTART DTEND EXDATE RDATE RECURRENCE-ID}} {
         if {[regexp {^\d{8}$} $value]} {
             return "${name};VALUE=DATE:${value}"
+        }
+        if {$tzid ne "" && [regexp {^\d{8}T\d{6}$} $value]} {
+            if {[regexp {[;:,"]} $tzid]} { ::set tzid "\"$tzid\"" }
+            return "${name};TZID=${tzid}:${value}"
         }
         return "${name}:${value}"
     }

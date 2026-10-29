@@ -251,7 +251,7 @@ proc ::tical::render::pdf::_drawMonthBlock {pdf viewSpec x0 y0 blockW blockH opt
                 $pdf setFont [expr {$fontsize * 0.8}] Helvetica
                 ::set weekX [expr {$x0 + $cellW / 2.0}]
                 ::set weekY [expr {$cellY + $cellH / 2.0}]
-                $pdf text $week -x $weekX -y $weekY -align center
+                $pdf text [format %02d $week] -x $weekX -y $weekY -align center
             }
 
             if {!$inMonth} {
@@ -569,5 +569,5 @@ proc ::tical::render::pdf::drawDay {pdf viewSpec args} {
     _drawDayGrid $pdf $viewSpec $opts
 }
 
-package provide tical::render::pdf 1.1
+package provide tical::render::pdf 1.1.1
 

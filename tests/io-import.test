@@ -11,6 +11,7 @@ if {[info exists ::env(TCLUTILS_TM)]} {
 }
 package require tical::io::import 1.1
 package require tical::view::month 1.1
+package require tical::view::day 1.1
 package require tical::render::term 1.1
 package require tical::io::ical 1.1
 
@@ -127,5 +128,166 @@ test import-5.1 {readFile} -setup {
 } -cleanup {
     tcltest::removeFile tical-import-5.1.ics
 } -result 5
+
+# --- TZID (1.1.1) ----------------------------------------------------------
+
+proc ics {body} {
+    return "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//t//t//EN\r\n[string map {\n \r\n} [string trim $body]]\r\nEND:VCALENDAR\r\n"
+}
+
+test import-6.1 {TZID: New York 09:00 is 15:00 in Berlin} -body {
+    ::set evs [tical::io::import::parse [ics {
+BEGIN:VEVENT
+UID:ny
+DTSTART;TZID=America/New_York:20251014T090000
+DTEND;TZID=America/New_York:20251014T100000
+SUMMARY:NY
+END:VEVENT}]]
+    ::set s [tical::view::day::getData -date 2025-10-14 -tz Europe/Berlin -hourStart 15 -hourEnd 15 -events $evs]
+    list [dict get [lindex $evs 0] dtstart] [dict get [lindex $evs 0] tzid] \
+         [dict get [lindex [dict get [lindex [dict get $s cells] 0] events] 0] time]
+} -result {20251014T090000 America/New_York 15:00}
+
+test import-6.2 {TZID: a daily series stays 09:00 in New York across both DST changes} -body {
+    ::set evs [tical::io::import::eventsInRange [ics {
+BEGIN:VEVENT
+UID:daily
+DTSTART;TZID=America/New_York:20251024T090000
+DTEND;TZID=America/New_York:20251024T093000
+RRULE:FREQ=DAILY;COUNT=11
+SUMMARY:Standup
+END:VEVENT}] 2025-10-24 2025-11-03 Europe/Berlin]
+    lmap e $evs {lindex [tical::event::toLocal [dict get $e dtstart] Europe/Berlin [dict get $e tzid]] 1}
+} -result {15:00 15:00 14:00 14:00 14:00 14:00 14:00 14:00 14:00 15:00 15:00}
+
+test import-6.3 {TZID: Windows name, prefixed id; DTEND in another zone converted} -body {
+    ::set evs [tical::io::import::parse [ics {
+BEGIN:VEVENT
+UID:w
+DTSTART;TZID=W. Europe Standard Time:20251014T090000
+DTEND;TZID=/mozilla.org/20050126_1/Europe/London:20251014T090000
+SUMMARY:W
+END:VEVENT}]]
+    ::set e [lindex $evs 0]
+    list [dict get $e dtend] [tical::event::toLocal [dict get $e dtstart] UTC [dict get $e tzid]]
+} -result {20251014T100000 {2025-10-14 07:00}}
+
+test import-6.4 {TZID Tcl does not know: time stays local} -body {
+    ::set e [lindex [tical::io::import::parse [ics {
+BEGIN:VEVENT
+UID:c
+DTSTART;TZID=Custom Zone:20251014T090000
+SUMMARY:C
+END:VEVENT}]] 0]
+    list [dict get $e tzid] [tical::event::toLocal [dict get $e dtstart] Europe/Berlin [dict get $e tzid]]
+} -result {{Custom Zone} {2025-10-14 09:00}}
+
+test import-6.5 {round trip: TZID written on export, read back} -body {
+    ::set ev {uid rt summary RT dtstart 20251014T090000 dtend 20251014T100000
+              tzid {Eastern Standard Time} rrule {freq WEEKLY count 2} exdate 20251021T090000}
+    ::set out [tical::io::ical::exportEvents [list $ev]]
+    ::set back [lindex [tical::io::import::parse $out] 0]
+    list [regexp -all {TZID=America/New_York:} $out] [dict get $back tzid] [dict get $back exdate]
+} -result {3 America/New_York 20251021T090000}
+
+test import-7.1 {UNTIL in UTC ends a series with TZID at the right occurrence} -body {
+    ::set evs [tical::io::import::eventsInRange [ics {
+BEGIN:VEVENT
+UID:u
+DTSTART;TZID=Europe/Berlin:20251020T180000
+DTEND;TZID=Europe/Berlin:20251020T190000
+RRULE:FREQ=DAILY;UNTIL=20251022T170000Z
+SUMMARY:S
+END:VEVENT}] 2025-10-01 2025-10-31 Europe/Berlin]
+    lmap e $evs {dict get $e dtstart}
+} -result {20251020T180000 20251021T180000 20251022T180000}
+
+test import-7.2 {EXDATE and RECURRENCE-ID in UTC remove the occurrence of a TZID series} -body {
+    ::set evs [tical::io::import::eventsInRange [ics {
+BEGIN:VEVENT
+UID:u
+DTSTART;TZID=America/New_York:20251020T090000
+RRULE:FREQ=DAILY;COUNT=4
+EXDATE:20251021T130000Z
+SUMMARY:S
+END:VEVENT
+BEGIN:VEVENT
+UID:u
+RECURRENCE-ID:20251022T130000Z
+DTSTART;TZID=America/New_York:20251022T100000
+SUMMARY:S (verlegt)
+END:VEVENT}] 2025-10-01 2025-10-31 Europe/Berlin]
+    lmap e $evs {list [dict get $e summary] [dict get $e dtstart]}
+} -result {{S 20251020T090000} {{S (verlegt)} 20251022T100000} {S 20251023T090000}}
+
+test import-7.3 {categories with an escaped comma: round trip} -body {
+    ::set out [tical::io::ical::exportEvents {{uid c summary C dtstart 20251014 categories {{Arbeit, Büro} Privat}}}]
+    ::set back [lindex [tical::io::import::parse $out] 0]
+    list [lsearch -inline -glob [split $out \r\n] CATEGORIES*] [dict get $back categories]
+} -result {{CATEGORIES:Arbeit\, Büro,Privat} {{Arbeit, Büro} Privat}}
+
+test import-8.1 {an override with STATUS:CANCELLED deletes its occurrence} -body {
+    ::set evs [tical::io::import::eventsInRange [ics {
+BEGIN:VEVENT
+UID:s
+DTSTART;TZID=Europe/Berlin:20251020T180000
+RRULE:FREQ=DAILY;COUNT=3
+SUMMARY:S
+END:VEVENT
+BEGIN:VEVENT
+UID:s
+RECURRENCE-ID;TZID=Europe/Berlin:20251021T180000
+DTSTART;TZID=Europe/Berlin:20251021T180000
+STATUS:cancelled
+SUMMARY:S
+END:VEVENT}] 2025-10-01 2025-10-31 Europe/Berlin]
+    lmap e $evs {dict get $e dtstart}
+} -result {20251020T180000 20251022T180000}
+
+test import-8.2 {EXDATE;VALUE=DATE removes the day of a timed series} -body {
+    ::set evs [tical::io::import::eventsInRange [ics {
+BEGIN:VEVENT
+UID:s
+DTSTART:20251020T180000
+RRULE:FREQ=DAILY;COUNT=3
+EXDATE;VALUE=DATE:20251021
+SUMMARY:S
+END:VEVENT
+BEGIN:VEVENT
+UID:u
+DTSTART:20251020T220000Z
+RRULE:FREQ=DAILY;COUNT=3
+EXDATE;VALUE=DATE:20251022
+SUMMARY:U
+END:VEVENT}] 2025-10-01 2025-10-31 Europe/Berlin]
+    lmap e $evs {dict get $e dtstart}
+} -result {20251020T180000 20251020T220000Z 20251022T180000 20251022T220000Z}
+
+test import-8.3 {UID with ; and , survives export and import; STATUS upper case} -body {
+    ::set out [tical::io::ical::exportEvents {{uid "a;b,c" summary A dtstart 20251014 status confirmed}}]
+    ::set e [lindex [tical::io::import::parse $out] 0]
+    list [dict get $e uid] [dict get $e status]
+} -result {{a;b,c} CONFIRMED}
+
+test import-9.1 {round trip of a series with a moved occurrence: RECURRENCE-ID kept, no duplicate} -body {
+    ::set src [ics {
+BEGIN:VEVENT
+UID:s
+DTSTART;TZID=Europe/Berlin:20251020T180000
+DTEND;TZID=Europe/Berlin:20251020T190000
+RRULE:FREQ=DAILY;COUNT=3
+SUMMARY:S
+END:VEVENT
+BEGIN:VEVENT
+UID:s
+RECURRENCE-ID;TZID=Europe/Berlin:20251021T180000
+DTSTART;TZID=Europe/Berlin:20251021T200000
+SUMMARY:S (verlegt)
+END:VEVENT}]
+    ::set out [tical::io::ical::exportEvents [tical::io::import::parse $src]]
+    ::set evs [tical::io::import::eventsInRange $out 2025-10-01 2025-10-31 Europe/Berlin]
+    list [regexp -all {RECURRENCE-ID;TZID=Europe/Berlin:20251021T180000} $out] \
+         [lmap e $evs {list [dict get $e summary] [dict get $e dtstart]}]
+} -result {1 {{S 20251020T180000} {{S (verlegt)} 20251021T200000} {S 20251022T180000}}}
 
 cleanupTests

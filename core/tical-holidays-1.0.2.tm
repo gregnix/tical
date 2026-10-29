@@ -1,4 +1,4 @@
-package provide tical::holidays 1.0.1
+package provide tical::holidays 1.0.2
 package require Tcl 8.6-
 
 namespace eval ::tical::holidays {
@@ -17,6 +17,10 @@ proc ::tical::holidays::getHolidays {country year month} {
     variable plugins
     set country [string toupper $country]
 
+    if {![regexp {^\d{1,2}$} $month] || [scan $month %d] < 1 || [scan $month %d] > 12} {
+        return -code error -errorcode {TICAL HOLIDAYS MONTH} \
+            "month must be 1..12, got \"$month\""
+    }
     if {![info exists plugins($country)]} {
         return {}
     }

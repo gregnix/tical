@@ -118,4 +118,149 @@ test event-6.1 {rruleString} -body {
     tical::event::rruleString {freq weekly byday {MO WE} count 4}
 } -result {FREQ=WEEKLY;BYDAY=MO,WE;COUNT=4}
 
+# --- tzid (1.1.1) ---------------------------------------------------------
+
+test event-7.1 {tzid: IANA, prefixed id, Windows name; unknown gives ""} -body {
+    lmap n {Europe/Berlin /mozilla.org/20050126_1/Europe/Berlin
+            {W. Europe Standard Time} {Eastern Standard Time} UTC Foo/Bar {Custom Zone} {}} {
+        tical::event::tzid $n
+    }
+} -result {:Europe/Berlin :Europe/Berlin :Europe/Berlin :America/New_York :UTC {} {} {}}
+
+test event-7.2 {epochs/days/toLocal: local time with tzid in the display zone} -body {
+    ::set ev [tical::event::normalize {summary NY dtstart 20251014T090000
+        dtend 20251014T100000 tzid America/New_York}]
+    lassign [tical::event::epochs $ev Europe/Berlin] s e
+    list [clock format $s -format %H:%M -timezone Europe/Berlin] [expr {$e - $s}] \
+         [tical::event::toLocal 20251014T090000 Europe/Berlin America/New_York]
+} -result {15:00 3600 {2025-10-14 15:00}}
+
+test event-7.3 {distribute: time and day from the tzid} -body {
+    ::set ev {summary Tokio dtstart 2025-10-14T06:00 tzid Asia/Tokyo}
+    ::set c [tical::event::distribute [list {date 2025-10-13} {date 2025-10-14}] [list $ev] Europe/Berlin]
+    list [dict exists [lindex $c 1] events] [dict get [lindex [dict get [lindex $c 0] events] 0] time]
+} -result {0 23:00}
+
+test event-7.4 {unknown tzid: time stays local, key kept} -body {
+    ::set ev [tical::event::normalize {summary X dtstart 2025-10-14T09:00 tzid {Custom Zone}}]
+    list [dict get $ev tzid] [tical::event::days $ev Europe/Berlin] \
+         [clock format [lindex [tical::event::epochs $ev Europe/Berlin] 0] -format %H:%M -timezone Europe/Berlin]
+} -result {{Custom Zone} 2025-10-14 09:00}
+
+test event-7.5 {tzid on UTC and date values has no effect} -body {
+    ::set a [tical::event::normalize {summary A dtstart 20251014T070000Z tzid America/New_York}]
+    ::set b [tical::event::normalize {summary B dtstart 2025-10-14 tzid America/New_York}]
+    list [tical::event::toLocal [dict get $a dtstart] Europe/Berlin] [tical::event::days $b Europe/Berlin]
+} -result {{2025-10-14 09:00} 2025-10-14}
+
+test event-8.1 {rrule values are checked (1.1.1)} -body {
+    lmap r {{freq WEEKLY interval 0} {freq WEEKLY count -3} {freq WEEKLY byday XX}
+            {freq MONTHLY bymonthday 0} {freq YEARLY bymonth 13} {freq DAILY until 2025-02-30}
+            {freq WEEKLY wkst XX} {freq MONTHLY byday {-1FR 2MO} interval 2 count 5}} {
+        if {[catch {tical::event::normalize [list summary A dtstart 2025-10-14 rrule $r]} m o]} {
+            dict get $o -errorcode
+        } else { list ok }
+    }
+} -result {{TICAL EVENT RRULE} {TICAL EVENT RRULE} {TICAL EVENT RRULE} {TICAL EVENT RRULE} {TICAL EVENT RRULE} {TICAL EVENT RRULE} {TICAL EVENT RRULE} ok}
+
+test event-8.2 {dtstart UTC and dtend local: compared as points in time} -setup {
+    ::set old [tical::config::get timezone]
+    tical::config::set timezone Europe/Berlin
+} -body {
+    # 09:00Z is 11:00 in Berlin; 10:00 local is before it, 12:00 after it
+    list [catch {tical::event::normalize {summary X dtstart 20251014T090000Z dtend 20251014T100000}} m o] \
+         [dict get $o -errorcode] \
+         [dict get [tical::event::normalize {summary X dtstart 20251014T090000Z dtend 20251014T120000}] dtend] \
+         [catch {tical::event::normalize {summary X dtstart 20251014T090000Z dtend 20251014T100000 tzid Europe/London}}]
+} -cleanup {
+    tical::config::set timezone $old
+} -result {1 {TICAL EVENT RANGE} 20251014T120000 0}
+
+# --- series in the core (1.1.1) ---------------------------------------------
+
+proc occ {start rule {to 20271231}} {
+    tical::event::_occurrences $start [tical::event::rrule $rule] $to :UTC
+}
+
+test event-10.1 {views show every occurrence of a series} -setup {
+    package require tical::view::month; package require tical::view::week; package require tical::view::day
+} -body {
+    ::set evs {{summary W dtstart 2025-10-06T09:00 dtend 2025-10-06T10:00 rrule {freq WEEKLY count 4}}}
+    ::set m [lmap c [dict get [tical::view::month::getData -year 2025 -month 10 -tz Europe/Berlin -events $evs] cells] {
+        expr {[llength [dict get $c events]] ? [dict get $c date] : [continue]}}]
+    ::set w [lmap c [dict get [tical::view::week::getData -date 2025-10-20 -tz Europe/Berlin -events $evs] cells] {
+        expr {[llength [dict get $c events]] ? [dict get $c date] : [continue]}}]
+    ::set d [dict get [tical::view::day::getData -date 2025-10-27 -tz Europe/Berlin -events $evs] events]
+    list $m $w [lmap e $d {list [dict get $e time] [dict get $e recurrence-id]}]
+} -result {{2025-10-06 2025-10-13 2025-10-20 2025-10-27} 2025-10-20 {{09:00 20251027T090000}}}
+
+test event-10.2 {expander: ordinals, month end, interval, until, wkst} -body {
+    list [occ 20251003 {FREQ=MONTHLY;BYDAY=1FR;COUNT=3}] \
+         [occ 20250131 {FREQ=MONTHLY;BYMONTHDAY=-1;COUNT=3}] \
+         [occ 20251127 {FREQ=YEARLY;BYMONTH=11;BYDAY=4TH;COUNT=3}] \
+         [occ 20251001T090000 {FREQ=MONTHLY;INTERVAL=2;BYMONTHDAY=31;COUNT=3}] \
+         [occ 20251006T090000 {FREQ=WEEKLY;UNTIL=20251020}] \
+         [occ 20251006 {FREQ=WEEKLY;INTERVAL=2;BYDAY=MO,SU;COUNT=4}] \
+         [occ 20251006 {FREQ=WEEKLY;INTERVAL=2;BYDAY=MO,SU;WKST=SU;COUNT=4}]
+} -result {{20251003 20251107 20251205} {20250131 20250228 20250331} {20251127 20261126 20271125} {20251031T090000 20251231T090000 20260831T090000} {20251006T090000 20251013T090000 20251020T090000} {20251006 20251012 20251020 20251026} {20251006 20251019 20251020 20251102}}
+
+test event-10.3 {expand: unsupported part, range checks} -body {
+    ::set r {}
+    foreach a [list \
+        [list [list {summary X dtstart 20251001 rrule {freq MONTHLY bysetpos -1}}] 2025-10-01 2025-10-31] \
+        [list {} 2025-10-01T10:00 2025-10-31] \
+        [list {} 2025-10-31 2025-10-01]] {
+        catch {tical::event::expand {*}$a} m o
+        lappend r [dict get $o -errorcode]
+    }
+    ::set r
+} -result {{TICAL EVENT RRULE} {TICAL EVENT RANGE} {TICAL EVENT RANGE}}
+
+# the same occurrences as tclutils::turrule (when tclutils is there)
+if {[info exists ::env(TCLUTILS_TM)]} {
+    if {$::env(TCLUTILS_TM) ne ""} { tcl::tm::path add $::env(TCLUTILS_TM) }
+} elseif {[file isdirectory [file join [file dirname [file normalize [file dirname [info script]]/..]] tclutils lib tm]]} {
+    tcl::tm::path add [file join [file dirname [file normalize [file dirname [info script]]/..]] tclutils lib tm]
+}
+testConstraint turrule [expr {![catch {package require tclutils::turrule 0.2}]}]
+
+test event-10.4 {expander equals tclutils::turrule for 25 rules 2024..2027} -constraints turrule -body {
+    ::set diff {}
+    foreach r {
+        {20251006T090000 FREQ=WEEKLY;COUNT=6} {20251006T090000 FREQ=WEEKLY;BYDAY=MO,WE,FR;COUNT=10}
+        {20251006T090000 FREQ=WEEKLY;INTERVAL=2;BYDAY=TU,TH} {20251001 FREQ=MONTHLY;BYMONTHDAY=-1}
+        {20250930 FREQ=MONTHLY;BYMONTHDAY=-1} {20251031T090000 FREQ=MONTHLY}
+        {20251001T090000 FREQ=MONTHLY;INTERVAL=2;BYMONTHDAY=31} {20251003 FREQ=MONTHLY;BYDAY=1FR}
+        {20251031 FREQ=MONTHLY;BYDAY=-1FR} {20251001 FREQ=MONTHLY;BYDAY=MO} {20250101 FREQ=YEARLY}
+        {20240229 FREQ=YEARLY} {20250101 FREQ=YEARLY;BYDAY=-1SU} {20251015 FREQ=MONTHLY;INTERVAL=3;COUNT=7}
+        {20250101 FREQ=YEARLY;BYMONTH=2;BYDAY=-1MO} {20251127 FREQ=YEARLY;BYMONTH=11;BYDAY=4TH}
+        {20250101 FREQ=YEARLY;BYMONTH=3,6;BYMONTHDAY=15} {20251001T080000 FREQ=DAILY;INTERVAL=3;COUNT=20}
+        {20251001T080000 FREQ=DAILY;BYDAY=MO,TU,WE,TH,FR;UNTIL=20251115T080000}
+        {20251001 FREQ=DAILY;BYMONTH=12} {20251013 FREQ=YEARLY;BYDAY=20MO}
+        {20251001 FREQ=MONTHLY;BYMONTHDAY=1,15;BYDAY=MO,WE} {20251006T090000 FREQ=WEEKLY;UNTIL=20251103}
+        {20251007T090000 FREQ=WEEKLY;BYDAY=MO} {20251001 FREQ=MONTHLY;BYMONTH=1,7;BYMONTHDAY=1}
+    } {
+        lassign $r st rule
+        ::set a [lmap o [tclutils::turrule::occurrences -dtstart $st -rule $rule \
+            -from 20240101 -to 20271231T235959] {tical::event::normalizeValue $o}]
+        if {$a ne [occ $st $rule]} { lappend diff $r }
+    }
+    ::set diff
+} -result {}
+
+test event-10.5 {skipping periods before the window loses no occurrence} -body {
+    ::set bad {}
+    foreach r {{FREQ=DAILY;INTERVAL=3} {FREQ=WEEKLY;INTERVAL=2;BYDAY=MO,SU;WKST=SU}
+               {FREQ=MONTHLY;BYMONTHDAY=31} {FREQ=MONTHLY;INTERVAL=5;BYDAY=-1FR}
+               {FREQ=YEARLY;BYMONTH=2;BYMONTHDAY=29} {FREQ=YEARLY;INTERVAL=3;BYDAY=20MO}} {
+        foreach from {20100101 20240229 20251031} {
+            ::set all [lmap v [occ 19960229 $r 20301231] {expr {$v >= $from ? $v : [continue]}}]
+            ::set part [lmap v [tical::event::_occurrences 19960229 [tical::event::rrule $r] 20301231 :UTC $from] {
+                expr {$v >= $from ? $v : [continue]}}]
+            if {$all ne $part} { lappend bad [list $r $from] }
+        }
+    }
+    ::set bad
+} -result {}
+
 cleanupTests

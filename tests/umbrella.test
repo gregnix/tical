@@ -4,9 +4,9 @@ lappend auto_path $rootDir
 package require tical
 namespace import ::tcltest::*
 
-test umbrella-1 {package require tical reports 1.1} -body {
+test umbrella-1 {package require tical reports 1.1.1} -body {
     package require tical
-} -result 1.1
+} -result 1.1.1
 
 test umbrella-2 {Tk-free core components are loaded} -body {
     set missing {}

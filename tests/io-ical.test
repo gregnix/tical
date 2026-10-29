@@ -320,9 +320,44 @@ test export-3.2 {RRULE string and BYMONTH/BYMONTHDAY are written} -body {
     string match "*RRULE:FREQ=MONTHLY;COUNT=3;BYMONTHDAY=-1*" $ics
 } -result 1
 
-test export-3.3 {PRODID names 1.1} -body {
-    string match "*PRODID:-//tical//tical 1.1//EN*" [tical::io::ical::exportEvents {}]
+test export-3.3 {PRODID names 1.1.1} -body {
+    string match "*PRODID:-//tical//tical 1.1.1//EN*" [tical::io::ical::exportEvents {}]
 } -result 1
+
+test export-3.4 {tzid: TZID parameter on local times, IANA name; not on UTC or dates} -body {
+    ::set out [tical::io::ical::exportEvents [list \
+        {uid a summary A dtstart 20251014T090000 dtend 20251014T100000 tzid {W. Europe Standard Time}} \
+        {uid b summary B dtstart 20251014T090000Z tzid Europe/Berlin} \
+        {uid c summary C dtstart 20251014 tzid Europe/Berlin} \
+        {uid d summary D dtstart 20251014T090000 tzid {Custom Zone}}]]
+    lsearch -all -inline -regexp [split $out \r\n] {^DTSTART|^DTEND}
+} -result {{DTSTART;TZID=Europe/Berlin:20251014T090000} {DTEND;TZID=Europe/Berlin:20251014T100000} DTSTART:20251014T090000Z {DTSTART;VALUE=DATE:20251014} {DTSTART;TZID=Custom Zone:20251014T090000}}
+
+test export-3.5 {UNTIL in UTC when DTSTART has a TZID; floating series unchanged} -body {
+    ::set a [tical::io::ical::exportEvents {{uid a summary A dtstart 20251014T090000 tzid Europe/Berlin
+        rrule {freq DAILY until 20251020T090000}}}]
+    ::set b [tical::io::ical::exportEvents {{uid b summary B dtstart 20251014T090000 tzid Europe/Berlin
+        rrule {freq DAILY until 20251020}}}]
+    ::set c [tical::io::ical::exportEvents {{uid c summary C dtstart 20251014T090000
+        rrule {freq DAILY until 20251020T090000}}}]
+    lmap o [list $a $b $c] {lsearch -inline -glob [split $o \r\n] RRULE*}
+} -result {{RRULE:FREQ=DAILY;UNTIL=20251020T070000Z} {RRULE:FREQ=DAILY;UNTIL=20251020T215959Z} {RRULE:FREQ=DAILY;UNTIL=20251020T090000}}
+
+test export-3.6 {STATUS checked and written upper case; UID escaped} -body {
+    ::set out [tical::io::ical::exportEvents {{uid "a;b" summary A dtstart 20251014 status tentative}}]
+    list [lsearch -inline -glob [split $out \r\n] STATUS*] [lsearch -inline -glob [split $out \r\n] UID*] \
+         [catch {tical::io::ical::exportEvents {{uid a summary A dtstart 20251014 status foo}}} m o] \
+         [dict get $o -errorcode] \
+         [catch {tical::io::ical::validate {uid a summary A dtstart 20251014 status foo}}]
+} -result {STATUS:TENTATIVE {UID:a\;b} 1 {TICAL ICAL STATUS} 1}
+
+test export-3.7 {recurrence-id written as RECURRENCE-ID (TZID, VALUE=DATE, UTC)} -body {
+    ::set out [tical::io::ical::exportEvents [list \
+        {uid a summary A dtstart 20251021T200000 recurrence-id 20251021T180000 tzid Europe/Berlin} \
+        {uid b summary B dtstart 20251022 recurrence-id 20251021} \
+        {uid c summary C dtstart 20251021T090000Z recurrence-id 2025-10-21T08:00Z}]]
+    lsearch -all -inline -glob [split $out \r\n] RECURRENCE-ID*
+} -result {{RECURRENCE-ID;TZID=Europe/Berlin:20251021T180000} {RECURRENCE-ID;VALUE=DATE:20251021} RECURRENCE-ID:20251021T080000Z}
 
 cleanupTests
 

@@ -100,6 +100,23 @@ test view-week-5.2 {-events: multi-day event over the week end} -body {
     lmap c [dict get $s cells] {lmap e [dict get $c events] {list [dict get $e summary] [dict get $e part]}}
 } -result {{} {{Call single}} {} {} {} {{Reise start}} {{Reise middle}}}
 
+test view-week-9.1 {-week outside 1..52/53 and a bad -year are errors} -body {
+    lmap a {{-year 2025 -week 60} {-year 2025 -week 0} {-year 2025 -week 53} {-year 25 -week 3}} {
+        catch {tical::view::week::getData {*}$a} m o
+        dict get $o -errorcode
+    }
+} -result {{TICAL VIEW OPTION} {TICAL VIEW OPTION} {TICAL VIEW OPTION} {TICAL VIEW OPTION}}
+
+test view-week-9.2 {week 53 where it exists; -week 08 gives week 8} -body {
+    list [dict get [lindex [dict get [tical::view::week::getData -year 2026 -week 53] cells] 0] date] \
+         [dict get [tical::view::week::getData -year 2025 -week 08] week]
+} -result {2026-12-28 8}
+
+test view-week-9.3 {-date in basic form; invalid date is a view error} -body {
+    list [dict get [tical::view::week::getData -date 20251014] week] \
+         [catch {tical::view::week::getData -date 2025-02-30} m o] [dict get $o -errorcode]
+} -result {42 1 {TICAL VIEW OPTION}}
+
 cleanupTests
 
 

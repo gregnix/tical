@@ -12,6 +12,7 @@ catch {fconfigure stdout -encoding utf-8}    ;# robust UTF-8 output on Tcl 9
 package require tical::config 1.0
 package require tical::view::day 1.0
 package require tical::holidays::de 1.0
+package require tical::render::term 1.1.1
 
 tical::config::set timezone Europe/Berlin
 
@@ -58,6 +59,15 @@ if {"holiday" in $markers} {
 }
 
 puts ""
+puts "4. render::term (14 Oct 2025, 8-12):"
+set events {
+    {summary Messe dtstart 2025-10-13 dtend 2025-10-16}
+    {summary Zahnarzt dtstart 2025-10-14T09:15 dtend 2025-10-14T10:00}
+    {summary "Call New York" dtstart 2025-10-14T05:00 tzid America/New_York}
+}
+set spec [tical::view::day::getData -date 2025-10-14 -hourStart 8 -hourEnd 12 -events $events]
+puts [tical::render::term::print $spec]
+
 puts "Done!"
 
 

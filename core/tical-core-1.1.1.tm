@@ -1,5 +1,6 @@
-package provide tical::core 1.1
+package provide tical::core 1.1.1
 package require Tcl 8.6-
+package require tical::config 1.0.2
 
 namespace eval tical::core {
     namespace export calendarData isLeap weekNumber
@@ -65,9 +66,9 @@ proc tical::core::calendarData {args} {
         set date [clock format $ts -format %Y-%m-%d -timezone $o(-tz)]
         # ISO weekday 1..7
         set dow  [clock format $ts -format %u -timezone $o(-tz)]
-        # week number (two digits, as before) per -firstWeek
-        set week [format %02d [weekNumber $ts $o(-tz) $o(-firstWeek)]]
-        set isToday [expr {[clock format [clock seconds] -format %Y-%m-%d -timezone $o(-tz)] eq $date}]
+        # week number per -firstWeek (a number since 1.1.1; was two digits)
+        set week [weekNumber $ts $o(-tz) $o(-firstWeek)]
+        set isToday [expr {[tical::config::today $o(-tz)] eq $date}]
         lappend days [dict create date $date dow $dow week $week isHoliday 0 isToday $isToday notes {} events {}]
     }
 

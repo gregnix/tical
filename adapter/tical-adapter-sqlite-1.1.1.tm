@@ -7,7 +7,7 @@
 
 package require Tcl 8.6-
 package require tdbc::sqlite3
-package require tical::event 1.1
+package require tical::event 1.1.1
 
 namespace eval ::tical::adapter::sqlite {
     namespace export connect disconnect create read update delete listRange listAll exists migrate
@@ -167,26 +167,56 @@ proc ::tical::adapter::sqlite::exists {db uid} {
 
 # Events starting in startDate..endDate. Bounds in any form tical::event
 # accepts (2025-10-01, 20251001, 20251001T090000Z ...); a date as end bound
-# includes that whole day.
-proc ::tical::adapter::sqlite::listRange {db startDate endDate} {
+# includes that whole day. Dates and local times (bounds and stored values)
+# are read in tz (default: tical::config timezone), UTC values as UTC, so
+# local and UTC starts compare as points in time. A series (rrule) gives
+# its occurrences that start in the range (each with recurrence-id; see
+# tical::event::expand). Sorted by start.
+proc ::tical::adapter::sqlite::listRange {db startDate endDate {tz {}}} {
+    if {$tz eq {}} { ::set tz [::tical::event::_tz] }
     ::set startDate [::tical::event::normalizeValue $startDate startDate]
     ::set endDate [::tical::event::normalizeValue $endDate endDate]
-    if {[string length $endDate] == 8} { append endDate T235959Z }
-    ::set stmt [$db prepare {
-        SELECT * FROM events 
-        WHERE starts_at >= :start AND starts_at <= :end
-        ORDER BY starts_at ASC
-    }]
-    
-    ::set rows [$stmt allrows [dict create start $startDate end $endDate]]
-    $stmt close
-    
-    ::set events {}
-    foreach row $rows {
-        lappend events [_deserializeEvent $row]
+    ::set from [::tical::event::_epoch $startDate $tz]
+    if {[string length $endDate] == 8} {
+        # whole end day: up to the start of the next day (exclusive)
+        ::set to [expr {[clock add [::tical::event::_epoch $endDate $tz] 1 day -timezone $tz] - 1}]
+    } else {
+        ::set to [::tical::event::_epoch $endDate $tz]
     }
-    
-    return $events
+    # every stored value starts with YYYYMMDD: preselect by day with a
+    # margin of one day for zone offsets, then compare epochs
+    ::set lo [clock format [expr {$from - 86400}] -format %Y%m%d -gmt 1]
+    ::set hi [clock format [expr {$to + 2 * 86400}] -format %Y%m%d -gmt 1]
+    ::set stmt [$db prepare {
+        SELECT * FROM events
+        WHERE (rrule IS NULL OR rrule = '') AND starts_at >= :lo AND starts_at < :hi
+    }]
+    ::set rows [$stmt allrows [dict create lo $lo hi $hi]]
+    $stmt close
+
+    ::set keyed {}
+    foreach row $rows {
+        ::set e [::tical::event::_epoch [dict get $row starts_at] $tz]
+        if {$e >= $from && $e <= $to} {
+            lappend keyed [list $e [_deserializeEvent $row]]
+        }
+    }
+    # series that began before the end of the range
+    ::set stmt [$db prepare {
+        SELECT * FROM events WHERE rrule <> '' AND starts_at < :hi
+    }]
+    ::set rows [$stmt allrows [dict create hi $hi]]
+    $stmt close
+    ::set d1 [clock format [expr {$from - 86400}] -format %Y-%m-%d -gmt 1]
+    ::set d2 [clock format [expr {$to + 86400}] -format %Y-%m-%d -gmt 1]
+    foreach row $rows {
+        ::set ev [dict remove [_deserializeEvent $row] starts_at ends_at]
+        foreach o [::tical::event::expand [list $ev] $d1 $d2 $tz] {
+            ::set e [::tical::event::_epoch [dict get $o dtstart] $tz]
+            if {$e >= $from && $e <= $to} { lappend keyed [list $e $o] }
+        }
+    }
+    return [lmap p [lsort -integer -index 0 $keyed] {lindex $p 1}]
 }
 
 proc ::tical::adapter::sqlite::listAll {db} {
@@ -285,18 +315,36 @@ proc ::tical::adapter::sqlite::_timestamp {} {
     return [clock format [clock seconds] -format "%Y-%m-%dT%H:%M:%SZ" -gmt 1]
 }
 
+# Lists are stored comma-separated; a comma or backslash inside an element
+# is escaped with a backslash ("Arbeit\, Büro,Privat"). Values written by
+# 1.1 (no backslashes) read the same.
 proc ::tical::adapter::sqlite::_serializeList {list} {
     if {[llength $list] == 0} {
         return ""
     }
-    return [join $list ","]
+    return [join [lmap e $list {string map {\\ \\\\ , \\,} $e}] ","]
 }
 
 proc ::tical::adapter::sqlite::_deserializeList {str} {
     if {$str eq ""} {
         return {}
     }
-    return [split $str ","]
+    ::set out {}
+    ::set cur ""
+    ::set n [string length $str]
+    for {::set i 0} {$i < $n} {incr i} {
+        ::set c [string index $str $i]
+        if {$c eq "\\" && $i + 1 < $n} {
+            append cur [string index $str [incr i]]
+        } elseif {$c eq ","} {
+            lappend out $cur
+            ::set cur ""
+        } else {
+            append cur $c
+        }
+    }
+    lappend out $cur
+    return $out
 }
 
 proc ::tical::adapter::sqlite::_serializeDict {dict} {
@@ -324,5 +372,5 @@ proc ::tical::adapter::sqlite::_deserializeDict {str} {
     return $dict
 }
 
-package provide tical::adapter::sqlite 1.1
+package provide tical::adapter::sqlite 1.1.1
 

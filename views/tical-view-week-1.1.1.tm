@@ -1,9 +1,9 @@
 package require tical::core 1.0
-package require tical::config 1.0
+package require tical::config 1.0.2
 package require tical::util 1.1
-package require tical::event 1.1
+package require tical::event 1.1.1
 
-package provide tical::view::week 1.1
+package provide tical::view::week 1.1.1
 package require Tcl 8.6-
 
 namespace eval tical::view::week {
@@ -43,7 +43,8 @@ proc tical::view::week::getData {args} {
     # Wenn -date angegeben, ISO-Jahr (%G) und ISO-Woche daraus bestimmen;
     # %Y wäre am Jahreswechsel falsch (2024-12-30 liegt in Woche 1/2025)
     if {$o(-date) ne {}} {
-        set ts [clock scan $o(-date) -format "%Y-%m-%d" -timezone $o(-tz)]
+        set o(-date) [::tical::event::_isoDate $o(-date) view::week::getData {TICAL VIEW OPTION}]
+        set ts [clock scan "$o(-date) 12:00:00" -format "%Y-%m-%d %H:%M:%S" -timezone $o(-tz)]
         set o(-year) [clock format $ts -format %G -timezone $o(-tz)]
         set o(-week) [scan [clock format $ts -format %V -timezone $o(-tz)] %d]
     }
@@ -53,6 +54,20 @@ proc tical::view::week::getData {args} {
             "view::week::getData: -year and -week (or -date) are required"
     }
     
+    if {![regexp {^\d{4}$} $o(-year)]} {
+        return -code error -errorcode {TICAL VIEW OPTION} \
+            "view::week::getData: -year must be a four-digit year, got \"$o(-year)\""
+    }
+    # ISO weeks of the year: 52 or 53 (28 December is always in the last week)
+    set last [scan [clock format [clock scan "$o(-year)-12-28 12:00:00" \
+        -format "%Y-%m-%d %H:%M:%S" -timezone $o(-tz)] -format %V -timezone $o(-tz)] %d]
+    if {![regexp {^\d{1,2}$} $o(-week)] || [scan $o(-week) %d] < 1
+            || [scan $o(-week) %d] > $last} {
+        return -code error -errorcode {TICAL VIEW OPTION} \
+            "view::week::getData: -week must be 1..$last for $o(-year), got \"$o(-week)\""
+    }
+    set o(-week) [scan $o(-week) %d]
+
     # Montag der Woche finden
     set monday [getIsoWeekStart $o(-year) $o(-week) $o(-tz)]
     
@@ -79,7 +94,7 @@ proc tical::view::week::getData {args} {
     
     # 7 Tage erstellen (Mo-So)
     set cells {}
-    set todayStr [clock format [clock seconds] -format %Y-%m-%d -timezone $o(-tz)]
+    set todayStr [tical::config::today $o(-tz)]
     
     for {set i 0} {$i < 7} {incr i} {
         set dayTs [clock add $monday $i days -timezone $o(-tz)]

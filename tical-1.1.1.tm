@@ -9,7 +9,7 @@
 #   tical::render::canvas   -> Tk
 #   tical::render::pdf      -> pdf4tcl
 #   tical::adapter::sqlite  -> tdbc::sqlite3
-#   tical::io::import       -> tclutils (tuical, turrule)
+#   tical::io::import       -> tclutils (tuical)
 
 package require Tcl 8.6-
 
@@ -28,4 +28,4 @@ package require tical::view::week  1.1
 package require tical::view::month 1.1
 package require tical::render::term 1.1
 
-package provide tical 1.1
+package provide tical 1.1.1

@@ -1,6 +1,6 @@
 # tical - Tcl Calendar Library
 
-**Version:** 1.1  
+**Version:** 1.1.1  
 **Status:** In Development  
 **Requires:** Tcl 8.6+; optional Tk 8.6+ (Canvas GUI), pdf4tcl (PDF), tdbc::sqlite3 (SQLite), tclutils (iCalendar import)
 
@@ -29,7 +29,7 @@ A modular calendar library for Tcl with support for multiple views, rendering ta
 ✅ **iCalendar Export** - RFC 5545 compliant (VEVENT, RRULE, EXDATE, all-day `VALUE=DATE`)  
 ✅ **iCalendar Import** - `tical::io::import` reads .ics and expands RRULE (optional, needs tclutils)  
 ✅ **SQLite Persistence** - CRUD operations with TDBC (create, read, update, delete)  
-✅ **Tested** - 270 tests across 16 files, all passing (Tcl 8.6/9; Tk, pdf4tcl, tdbc::sqlite3, tclutils) ✅  
+✅ **Tested** - 330 tests across 16 files, all passing (Tcl 8.6/9; Tk, pdf4tcl, tdbc::sqlite3, tclutils) ✅  
 ✅ **Demos** - 19 demos (Terminal, Canvas, PDF, PNG, Data, iCal)
 
 ---
@@ -88,6 +88,22 @@ view (`-holidays DE`) appear as `(3)`, today as `[17]` (only with
 `(3*` when combined). The column order follows the view:
 `getData ... -weekStart sun` gives `So Mo ... Sa`.
 
+Week and day views print as lists (since 1.1.1):
+```tcl
+puts [tical::render::term::print [tical::view::week::getData -date 2025-10-14 -events $events]]
+```
+```
+ KW 42 2025
+ Mo 13 Okt
+ Di 14 Okt   09:00 Team Meeting
+ Mi 15 Okt
+ ...
+```
+Holiday `(Fr 03 Okt)`, today `[Di 14 Okt]` (with `-color 1`); all-day
+events without time, `.. summary` where an event continues from an earlier
+day. The day view prints one line per hour (`09:00 | 09:15 Call`), all-day
+events under the title.
+
 ### Canvas GUI (Interactive)
 
 ```tcl
@@ -111,6 +127,8 @@ tical::render::canvas::draw .c $viewSpec \
 tical::render::canvas::setCallback [list apply {{w date} {
     puts "Clicked: $date"
 }}]
+# only for this canvas (since 1.1.1; wins over the global callback)
+tical::render::canvas::setCallback .c [list apply {{w date} {puts "$w: $date"}}]
 ```
 
 **Features:**
@@ -132,6 +150,7 @@ One event format for views, model, iCalendar and SQLite (`tical::event`):
 | `dtend` | end (optional), same kind; all-day: exclusive (day after the last day) |
 | `allday` | `0`/`1`, follows `dtstart` |
 | `uid`, `description`, `location`, `status`, `categories`, `rrule`, `exdate` | optional |
+| `tzid` | optional zone of local times (`Europe/Berlin`, also `/mozilla.org/.../Europe/Berlin` and Windows names such as `W. Europe Standard Time`); converted to the display zone |
 
 `tical::event::normalize` converts and checks (errors `{TICAL EVENT ...}`);
 for 1.1 it also takes the older names `title`/`date`/`startTime`/`endTime`
@@ -139,7 +158,11 @@ for 1.1 it also takes the older names `title`/`date`/`startTime`/`endTime`
 
 `getData ... -events LIST` (month, week, day) puts the events into the
 `events` of the cells; an event over several days appears in every cell it
-touches. Each entry is the event plus `part` (`single`, `start`, `middle`,
+touches. A series (`rrule`) appears on every occurrence (since 1.1.1; was
+only its first day): `tical::event::expand EVENTS FROM TO ?TZ?` resolves
+it in the core, without tclutils (FREQ DAILY/WEEKLY/MONTHLY/YEARLY,
+INTERVAL, COUNT, UNTIL, BYDAY with ordinals, BYMONTH, BYMONTHDAY, WKST;
+EXDATE and overrides with RECURRENCE-ID honoured). Each entry is the event plus `part` (`single`, `start`, `middle`,
 `end`) and `time` (local start `HH:MM` on the start day, else empty).
 The day view also has a key `events` for the whole day; its hour cells hold
 the timed events. `tical::model::toEvents` and the results of
@@ -155,10 +178,18 @@ set events [tical::io::import::readFile termine.ics]       ;# tical::event dicts
 set oct    [tical::io::import::expand $events 2025-10-01 2025-10-31]
 set spec   [tical::view::month::getData -year 2025 -month 10 -events $oct]
 ```
-`expand` resolves RRULE (via `tclutils::turrule`), honours EXDATE and
+`expand` (= `tical::event::expand`) resolves RRULE, honours EXDATE and
 RECURRENCE-ID and returns the occurrences that touch the range, sorted.
-`DTSTART;VALUE=DATE` gives all-day events; `TZID` is kept as key `tzid`,
-the time is read as local time.
+An override with `STATUS:CANCELLED` (one occurrence deleted in Google or
+Outlook) removes its occurrence; `EXDATE;VALUE=DATE` removes the whole
+day of a timed series.
+`DTSTART;VALUE=DATE` gives all-day events. `TZID` is kept as key `tzid`
+with the wall-clock time; `tical::event` and the views convert it to the
+display zone (`-tz`, `tical::config` timezone), and a series is expanded
+in its own zone (18:00 in New York stays 18:00 there across daylight
+saving). A TZID Tcl does not know (a custom `VTIMEZONE`) leaves the time as
+local time; `tical::event::tzid NAME` returns `""` then. The export writes
+`DTSTART;TZID=...` again (no `VTIMEZONE`).
 
 ### Quarter View (3 months)
 
@@ -213,11 +244,16 @@ tical::config::set timezone :Europe/Berlin
 tical::config::set locale de_DE
 tical::config::set weekstart mon        ;# mon|sun (monday|sunday accepted)
 tical::config::set firstweek iso        ;# iso|simple|us
-tical::config::set theme dark
+tical::config::set theme dark           ;# default|dark
+tical::config::set today 2025-10-14     ;# date marked as today ("" = real date)
 
 # Query settings
 set tz [tical::config::get timezone]
 ```
+Keys and values are checked (since 1.0.2): an unknown key is an error
+`{TICAL CONFIG KEY}`, a bad value (zone Tcl does not know, locale of
+another language than de/en/fr, `weekstart sonntag` ...) an error
+`{TICAL CONFIG VALUE}`; the setting keeps its old value.
 
 ---
 
@@ -228,7 +264,7 @@ set tz [tical::config::get timezone]
 - `tical::util` - Helpers (mm2pt, defaults, markers, option checking)
 - `tical::event` - Event format: normalize, validate, place on days
 - `tical::config` - Global settings (timezone, locale, theme)
-- `tical::term` - VT100 terminal styling
+- `tical::term` - placeholder, deprecated, removed in 1.2
 - `tical::holidays` - Holiday plugin system
 
 ### Views ✅ 
@@ -237,7 +273,7 @@ set tz [tical::config::get timezone]
 - `tical::view::day` - Day grid (24 hours, customizable)
 
 ### Renderers ✅ 
-- `tical::render::term` - ASCII/Unicode terminal output
+- `tical::render::term` - plain-text output (month grid, week and day lists)
 - `tical::render::canvas` - Tk Canvas GUI (interactive)
 - `tical::render::pdf` - PDF (needs pdf4tcl)
 
@@ -248,7 +284,10 @@ set tz [tical::config::get timezone]
 - `tical::adapter::sqlite` - SQLite persistence (needs tdbc::sqlite3)
 
 ### Holidays ✅ 
-- `tical::holidays::de` - German holidays (9+ holidays, Easter calculation)
+- `tical::holidays::de` - German holidays: the nine nationwide ones;
+  `getHolidays -sundays 1 YEAR` adds Ostersonntag and Pfingstsonntag (the
+  list of `tclutils::tuholiday`). For the views:
+  `tical::holidays::register DE {::tical::holidays::de::getHolidays -sundays 1}`
 
 
 
@@ -267,6 +306,8 @@ proc validate {viewSpec} { ... }  # Validates ViewSpec
 #   -year INT
 #   -month INT (1-12)
 #   -tz STRING (IANA timezone)
+#   -date YYYY-MM-DD or YYYYMMDD (week, day)
+#   -week 1..52/53 (week; ISO weeks of -year)
 #   -weekStart mon|sun (month only; week view is always Monday-Sunday)
 #   -firstWeek iso|simple|us (month only; iso: ISO 8601, simple: week 1 =
 #              January 1-7, us: Sunday weeks, week 1 contains January 1)
@@ -278,10 +319,10 @@ proc validate {viewSpec} { ... }  # Validates ViewSpec
 ### Render API (Consistent)
 
 ```tcl
-# Terminal (month-grid):
+# Terminal (month-grid, week-grid, day-grid):
 tical::render::term::print $viewSpec \
     ?-color 0|1? \
-    ?-weekNumbers 0|1? \
+    ?-weekNumbers 0|1? \         ;# month only
     ?-weekStart mon|sun?        ;# check only, must match the view
 
 # Canvas:
@@ -332,20 +373,20 @@ cd tical/tests
 tclsh all.tcl
 ```
 
-**Test files (16 files, 270 tests, all passing):**
-- `core.test` (5), `util.test` (10), `locale.test` (18), `holidays.test` (8), `event.test` (23) — engine basics
-- `view-day.test` (14), `view-week.test` (15), `view-month.test` (18) — view generation
-- `render-term.test` (20), `render-canvas.test` (28), `render-pdf.test` (19) — renderers
-- `io-ical.test` (32) — iCalendar export and `validate`
-- `io-import.test` (11) — iCalendar import, RRULE expansion
-- `model.test` (18), `adapter-sqlite.test` (28) — event model + SQLite (TDBC) persistence
+**Test files (16 files, 330 tests, all passing):**
+- `core.test` (8), `util.test` (11), `locale.test` (19), `holidays.test` (15), `event.test` (35) — engine basics
+- `view-day.test` (16), `view-week.test` (18), `view-month.test` (19) — view generation
+- `render-term.test` (26), `render-canvas.test` (31), `render-pdf.test` (19) — renderers
+- `io-ical.test` (36) — iCalendar export and `validate`
+- `io-import.test` (23) — iCalendar import, RRULE expansion
+- `model.test` (20), `adapter-sqlite.test` (31) — event model + SQLite (TDBC) persistence
 - `umbrella.test` (3) — umbrella package load
 
 GUI/PDF/DB/import tests need `Tk` / `pdf4tcl` / `tdbc::sqlite3` / tclutils;
 they skip cleanly when those packages are absent (run Tk tests under
 `xvfb-run`). tclutils is found via `TCLUTILS_TM` (its `lib/tm`; empty: none)
 or a sibling checkout `../tclutils/lib/tm`. Measured: Tcl 9.0 with all
-packages 270 passed; Tcl 8.6 without `tdbc::sqlite3` 242 passed.
+packages 330 passed; Tcl 8.6 without `tdbc::sqlite3` 299 passed.
 
 **Test Coverage:**
 - ✅ ISO week number calculation
@@ -441,6 +482,8 @@ Contributions welcome! Please:
 3. Update documentation
 
 ---
+
+Developed with the help of AI tools; the code is reviewed and tested by the author.
 
 ## License
 

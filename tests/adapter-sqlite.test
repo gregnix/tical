@@ -379,5 +379,45 @@ test sqlite-9.5 {invalid value is an error} -body {
     dict get $opt -errorcode
 } -result {TICAL EVENT FORMAT}
 
+# --- 1.1.1 --------------------------------------------------------------------
+
+test sqlite-9.1 {categories with comma and backslash survive; old rows read the same} -body {
+    ::set db [tical::adapter::sqlite::connect ":memory:"]
+    tical::adapter::sqlite::migrate $db
+    ::set u [tical::adapter::sqlite::create $db {summary A dtstart 2025-10-14 categories {{Arbeit, Büro} {C:\\x} Privat}}]
+    ::set r [list [dict get [tical::adapter::sqlite::read $db $u] categories]]
+    $db allrows {UPDATE events SET categories = 'a,b' }
+    lappend r [dict get [tical::adapter::sqlite::read $db $u] categories]
+    tical::adapter::sqlite::disconnect $db
+    ::set r
+} -result {{{Arbeit, Büro} {C:\\x} Privat} {a b}}
+
+test sqlite-9.2 {listRange compares local and UTC starts as points in time} -body {
+    ::set db [tical::adapter::sqlite::connect ":memory:"]
+    tical::adapter::sqlite::migrate $db
+    # Berlin, October: UTC+2
+    tical::adapter::sqlite::create $db {uid lokal summary L dtstart 2025-10-14T09:00}
+    tical::adapter::sqlite::create $db {uid utc summary U dtstart 20251031T233000Z}
+    tical::adapter::sqlite::create $db {uid ganz summary G dtstart 2025-11-01}
+    ::set r [list \
+        [lmap e [tical::adapter::sqlite::listRange $db 20251014T080000Z 20251014T100000Z Europe/Berlin] {dict get $e uid}] \
+        [lmap e [tical::adapter::sqlite::listRange $db 20251014T060000Z 20251014T073000Z Europe/Berlin] {dict get $e uid}] \
+        [lmap e [tical::adapter::sqlite::listRange $db 2025-11-01 2025-11-01 Europe/Berlin] {dict get $e uid}] \
+        [lmap e [tical::adapter::sqlite::listRange $db 2025-10-31 2025-10-31 Europe/Berlin] {dict get $e uid}]]
+    tical::adapter::sqlite::disconnect $db
+    ::set r
+} -result {{} lokal {ganz utc} {}}
+
+test sqlite-9.3 {listRange returns the occurrences of a stored series} -body {
+    ::set db [tical::adapter::sqlite::connect ":memory:"]
+    tical::adapter::sqlite::migrate $db
+    tical::adapter::sqlite::create $db {uid w summary W dtstart 2025-09-29T09:00 rrule {freq WEEKLY count 6}}
+    tical::adapter::sqlite::create $db {uid e summary E dtstart 2025-10-14T12:00}
+    ::set r [lmap e [tical::adapter::sqlite::listRange $db 2025-10-01 2025-10-31 Europe/Berlin] {
+        list [dict get $e uid] [dict get $e dtstart]}]
+    tical::adapter::sqlite::disconnect $db
+    ::set r
+} -result {{w 20251006T090000} {w 20251013T090000} {e 20251014T120000} {w 20251020T090000} {w 20251027T090000}}
+
 cleanupTests
 

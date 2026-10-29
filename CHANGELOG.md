@@ -1,5 +1,88 @@
 # Changelog
 
+## 1.1.1
+
+- `tical::event` 1.1.1: key `tzid` (zone of local times): `epochs`, `days`,
+  `distribute` and the views convert such times to the display zone;
+  `tzid NAME` (new) maps IANA names, prefixed ids
+  (`/mozilla.org/.../Europe/Berlin`) and common Windows names to a Tcl zone,
+  `""` when unknown (the time then stays local as before); `toLocal` takes
+  an optional zone of the value; rrule values checked (`interval`,
+  `count` >= 1, `until`, `byday`, `bymonth`, `bymonthday`, `wkst`), error
+  `{TICAL EVENT RRULE}` (were accepted and failed later or were exported);
+  `expand` (new): series resolved in the core without tclutils (DAILY,
+  WEEKLY, MONTHLY, YEARLY, INTERVAL, COUNT, UNTIL, BYDAY with ordinals,
+  BYMONTH, BYMONTHDAY, WKST), with EXDATE and overrides; `distribute`
+  and so the views show every occurrence of a series (was only the first
+  day);
+  `dtstart` in UTC and `dtend` local (or the other way round) are
+  compared as points in time (`dtend` before `dtstart` was accepted).
+- `tical::io::import` 1.1.1: needs only `tclutils::tuical`; `expand` is
+  `tical::event::expand` (was `tclutils::turrule`, same occurrences);
+  `TZID` is converted (was read as local time);
+  series expand in their own zone; DTEND, EXDATE and RECURRENCE-ID in
+  another zone are converted to the zone of DTSTART. `UNTIL`, `EXDATE`
+  and `RECURRENCE-ID` in UTC end or skip the right occurrence of a local
+  series (were compared as wall-clock time). Escaped commas in
+  `CATEGORIES` no longer split a category. An override with
+  `STATUS:CANCELLED` removes its occurrence (was shown);
+  `EXDATE;VALUE=DATE` removes the day of a timed series (was ignored);
+  `UID` unescaped, `STATUS` upper case.
+- `tical::io::ical` 1.1.1: local times with `tzid` are written with
+  `TZID=` (IANA name, no VTIMEZONE), `UNTIL` then in UTC as RFC 5545
+  requires; commas and semicolons in categories and `UID` escaped;
+  `STATUS` checked (`TENTATIVE`, `CONFIRMED`, `CANCELLED`, error
+  `{TICAL ICAL STATUS}`) and written upper case; `recurrence-id` written as
+  `RECURRENCE-ID` (a moved occurrence came back as a second event);
+  the last line ends with CRLF too; PRODID 1.1.1.
+- New `tests/roundtrip.test` with files in `tests/data/roundtrip`: import,
+  export, import again, expand series. Alarms, attendees, organizer, X-
+  properties and to-dos are not part of the tical model and not exported.
+- `tical::config` 1.0.2: keys and values checked (`{TICAL CONFIG KEY}`,
+  `{TICAL CONFIG VALUE}`; an unknown locale fell back to English, a
+  typo created a new key); key `today` takes effect (was set but not
+  read): core and views mark that date; `tical::config::today`.
+- `tical::core` 1.1.1: today from `tical::config::today`; `week` of the
+  days is a number (was two digits, `01`), as in the week view and the
+  schema; month view 1.1.1 likewise.
+- `tical::render::canvas` 1.1.1: `setCallback ?w? cmd`: a callback for one
+  canvas (wins over the global one, removed with the canvas); a first
+  argument that is no widget path is an error `{TICAL RENDER ARGS}`.
+  Week numbers still drawn with two digits.
+- `tical::render::pdf` 1.1.1: week numbers still drawn with two digits.
+- `tical::term` deprecated (placeholder, unused), removed in 1.2.
+- `tical::locale` 1.0.2: month 1..12, weekday 1..7 and format `long` /
+  `short` checked, errors `{TICAL LOCALE MONTH|DOW|FORMAT}` (returned ""
+  or the long names).
+- `tical::holidays` 1.0.2: month 1..12 checked, error
+  `{TICAL HOLIDAYS MONTH}` (returned an empty dict).
+- `tical::util` 1.1.1: `expandSelection` rejects dates that do not exist.
+- `tical::model` 1.1.1: unknown options and a missing value are an error
+  `{TICAL MODEL OPTION}` in `create…` and `updateAppointment` (were
+  ignored); `updateAppointment` sets `status`, `categories`, `allday`.
+- `tical::adapter::sqlite` 1.1.1: categories and exdate with commas
+  stored escaped (older rows read the same); `listRange db from to ?tz?`
+  compares starts as points in time (local and UTC values were compared
+  as text) and returns the occurrences of stored series (was the series
+  only when it began in the range).
+- Views 1.1.1: `-month` outside 1..12, `-week` outside the ISO weeks of
+  the year (was moved into the next year), `-year` not four digits, an
+  invalid `-date` and `-hourStart` after `-hourEnd` are errors
+  `{TICAL VIEW OPTION}` (were `CLOCK …` errors or accepted); `-date` also
+  as `YYYYMMDD`; week view key `week` as a number (`08` -> `8`).
+- `tical::render::term` 1.1.1: week and day views as lists (were an error
+  `{TICAL RENDER TYPE}`); `-weekStart` checked for week views too.
+- `tical::holidays::de` 1.0.1: `getHolidays ?-sundays 0|1? year`;
+  `-sundays 1` adds Ostersonntag and Pfingstsonntag, the same list as
+  `tclutils::tuholiday`; result sorted; errors `{TICAL HOLIDAYS OPTION}`,
+  `{TICAL HOLIDAYS YEAR}`.
+- `tical` umbrella 1.1.1.
+- Removed leftover files `io/tical-io-ical-1.0.1.tm`,
+  `render/tical-render-term-1.0.1.tm`, `views/tical-view-month-1.0.1.tm`.
+- Demos: `demo-week-term`, `demo-day-term` print with `render::term`.
+- Tests: 330 (Tcl 9.0, all optional packages); Tcl 8.6 without
+  `tdbc::sqlite3`: 299.
+
 ## 1.1
 
 - `tical::event` 1.1 (new): one event format for views, model, iCalendar

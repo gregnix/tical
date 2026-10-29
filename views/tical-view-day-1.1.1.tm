@@ -1,9 +1,9 @@
 package require tical::core 1.0
-package require tical::config 1.0
+package require tical::config 1.0.2
 package require tical::util 1.1
-package require tical::event 1.1
+package require tical::event 1.1.1
 
-package provide tical::view::day 1.1
+package provide tical::view::day 1.1.1
 package require Tcl 8.6-
 
 namespace eval tical::view::day {
@@ -24,11 +24,16 @@ proc tical::view::day::getData {args} {
         return -code error -errorcode {TICAL VIEW ARGS} \
             "view::day::getData: -date is required"
     }
+    set o(-date) [::tical::event::_isoDate $o(-date) view::day::getData {TICAL VIEW OPTION}]
     foreach k {-hourStart -hourEnd} {
         if {![string is integer -strict $o($k)] || $o($k) < 0 || $o($k) > 23} {
             return -code error -errorcode {TICAL VIEW OPTION} \
                 "view::day::getData: $k must be an integer 0..23, got \"$o($k)\""
         }
+    }
+    if {$o(-hourStart) > $o(-hourEnd)} {
+        return -code error -errorcode {TICAL VIEW OPTION} \
+            "view::day::getData: -hourStart $o(-hourStart) is after -hourEnd $o(-hourEnd)"
     }
 
     if {$o(-tz) eq {}} {
@@ -43,7 +48,7 @@ proc tical::view::day::getData {args} {
     set dow [clock format $ts -format %u -timezone $tz]
     set week [scan [clock format $ts -format %V -timezone $tz] %d]
 
-    set todayStr [clock format [clock seconds] -format %Y-%m-%d -timezone $tz]
+    set todayStr [tical::config::today $tz]
     set isToday [expr {$o(-date) eq $todayStr}]
 
     set isHoliday 0

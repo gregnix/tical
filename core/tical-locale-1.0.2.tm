@@ -2,7 +2,7 @@
 
 package require tical::config 1.0
 
-package provide tical::locale 1.0.1
+package provide tical::locale 1.0.2
 package require Tcl 8.6-
 
 namespace eval ::tical::locale {
@@ -60,16 +60,31 @@ proc ::tical::locale::getMonthNamesShort {} {
     return [dict get $translations en monthsShort]
 }
 
+# format: long | short; other values: error {TICAL LOCALE FORMAT}
 proc ::tical::locale::getMonthNames {{format long}} {
-    if {$format eq "short"} {
-        return [getMonthNamesShort]
+    switch -- $format {
+        short   { return [getMonthNamesShort] }
+        long    { return [getMonthNamesLong] }
+        default {
+            return -code error -errorcode {TICAL LOCALE FORMAT} \
+                "bad format \"$format\": must be long or short"
+        }
     }
-    return [getMonthNamesLong]
+}
+
+# Integer n in lo..hi ("05" accepted), else error {TICAL LOCALE <what>}.
+proc ::tical::locale::_num {v lo hi what} {
+    if {![regexp {^\d{1,2}$} $v] || [scan $v %d] < $lo || [scan $v %d] > $hi} {
+        return -code error -level 2 -errorcode [list TICAL LOCALE [string toupper $what]] \
+            "$what must be $lo..$hi, got \"$v\""
+    }
+    return [scan $v %d]
 }
 
 proc ::tical::locale::getMonthName {month {format long}} {
+    ::set m [_num $month 1 12 month]
     ::set names [getMonthNames $format]
-    return [lindex $names $month]
+    return [lindex $names $m]
 }
 
 # Weekday lists start on Monday; startDow (1 = Monday .. 7 = Sunday) rotates
@@ -103,11 +118,16 @@ proc ::tical::locale::getWeekdaysShort {{startDow 1}} {
     return [_rotate [dict get $translations en weekdaysShort] $startDow]
 }
 
+# format: long | short (also 2); other values: error {TICAL LOCALE FORMAT}
 proc ::tical::locale::getWeekdayNames {{format long} {startDow 1}} {
-    if {$format eq "short" || $format eq "2"} {
-        return [getWeekdaysShort $startDow]
+    switch -- $format {
+        short - 2 { return [getWeekdaysShort $startDow] }
+        long      { return [getWeekdaysLong $startDow] }
+        default {
+            return -code error -errorcode {TICAL LOCALE FORMAT} \
+                "bad format \"$format\": must be long or short"
+        }
     }
-    return [getWeekdaysLong $startDow]
 }
 
 # Label for a calendar week: long (title, "Week 42") or short (column head,
@@ -123,8 +143,9 @@ proc ::tical::locale::getWeekLabel {{format long}} {
 }
 
 proc ::tical::locale::getWeekdayName {dow {format long}} {
+    ::set d [_num $dow 1 7 dow]
     ::set names [getWeekdayNames $format]
-    return [lindex $names [expr {$dow - 1}]]
+    return [lindex $names [expr {$d - 1}]]
 }
 
 proc ::tical::locale::getSupportedLocales {} {

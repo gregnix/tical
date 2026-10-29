@@ -3,6 +3,7 @@ lappend auto_path [file normalize [file dirname [info script]]/..]
 package require tical::view::month 1.1
 package require tical::render::term 1.1
 package require tical::view::week 1.1
+package require tical::view::day 1.1
 
 namespace import tcltest::*
 
@@ -125,10 +126,9 @@ test render-term-4.3 {week label follows the locale (en_US: Wk)} -setup {
 } -result { Wk  Mo  Tu  We  Th  Fr  Sa  Su}
 
 test render-term-4.4 {wrong ViewSpec type: English message, stable errorcode} -body {
-    ::set w [tical::view::week::getData -date 2025-10-14]
-    catch {tical::render::term::print $w} m opt
+    catch {tical::render::term::print {type year-grid cells {}}} m opt
     list $m [dict get $opt -errorcode]
-} -result {{render::term::print: expected type month-grid, got "week-grid"} {TICAL RENDER TYPE}}
+} -result {{render::term::print: expected type month-grid, week-grid or day-grid, got "year-grid"} {TICAL RENDER TYPE}}
 
 test render-term-4.5 {empty cells without adjacent days} -body {
     ::set s [tical::view::month::getData -year 2025 -month 10 -showAdjacentDays 0]
@@ -172,5 +172,97 @@ test render-term-6.1 {week column: week of the middle of the row (-firstWeek us,
 } -cleanup {
     tical::config::set locale $old
 } -result {{ Wk  Su  Mo  Tu  We  Th  Fr  Sa} {  1  ..  ..  ..   1   2   3   4} {  2   5   6   7   8   9  10  11}}
+
+# --- week and day lists (1.1.1) ----------------------------------------------
+
+::set termEvents {
+    {summary Zahnarzt dtstart 2025-10-13T09:00 dtend 2025-10-13T10:00}
+    {summary Training dtstart 2025-10-13T18:00 dtend 2025-10-13T19:30}
+    {summary Urlaub dtstart 2025-10-16 dtend 2025-10-18}
+    {summary Nacht dtstart 2025-10-14T22:00 dtend 2025-10-15T02:00}
+}
+
+test render-term-5.1 {week list: one line per day, events below the label} -setup {
+    ::set old [tical::config::get locale]
+    tical::config::set locale de_DE
+} -body {
+    ::set s [tical::view::week::getData -date 2025-10-14 -tz Europe/Berlin -events $termEvents]
+    tical::render::term::print $s
+} -cleanup {
+    tical::config::set locale $old
+} -result { KW 42 2025
+ Mo 13 Okt   09:00 Zahnarzt
+             18:00 Training
+ Di 14 Okt   22:00 Nacht
+ Mi 15 Okt   .. Nacht
+ Do 16 Okt   Urlaub
+ Fr 17 Okt   .. Urlaub
+ Sa 18 Okt
+ So 19 Okt
+}
+
+test render-term-5.2 {week list: holiday (03), today [..] only with -color 1, en_US} -setup {
+    ::set old [tical::config::get locale]
+    tical::config::set locale en_US
+    package require tical::holidays::de
+} -body {
+    ::set s [tical::view::week::getData -date 2025-10-01 -holidays DE]
+    ::set cells [dict get $s cells]
+    ::set c [lindex $cells 0]; dict lappend c markers today; lset cells 0 $c
+    dict set s cells $cells
+    list [lrange [split [tical::render::term::print $s -color 1] \n] 0 5] \
+         [lindex [split [tical::render::term::print $s] \n] 1]
+} -cleanup {
+    tical::config::set locale $old
+} -result {{{ Week 40 2025} {[Mo 29 Sep]} { Tu 30 Sep} { We 01 Oct} { Th 02 Oct} {(Fr 03 Oct)}} { Mo 29 Sep}}
+
+test render-term-5.3 {day list: hours, events starting there, running-on event in the first hour} -setup {
+    ::set old [tical::config::get locale]
+    tical::config::set locale de_DE
+} -body {
+    ::set s [tical::view::day::getData -date 2025-10-15 -tz Europe/Berlin -hourStart 0 -hourEnd 2 \
+        -events [linsert $termEvents end {summary Frueh dtstart 2025-10-15T01:15} {summary Auch dtstart 2025-10-15T01:45}]]
+    tical::render::term::print $s
+} -cleanup {
+    tical::config::set locale $old
+} -result { Mi 15 Okt 2025
+00:00 | .. Nacht
+01:00 | 01:15 Frueh
+      | 01:45 Auch
+02:00 |
+}
+
+test render-term-5.4 {day list: all-day events under the title, holiday in brackets} -setup {
+    ::set old [tical::config::get locale]
+    tical::config::set locale de_DE
+    package require tical::holidays::de
+} -body {
+    ::set s [tical::view::day::getData -date 2025-10-03 -hourStart 8 -hourEnd 8 -holidays DE \
+        -events {{summary Ausflug dtstart 2025-10-03}}]
+    tical::render::term::print $s
+} -cleanup {
+    tical::config::set locale $old
+} -result {(Fr 03 Okt 2025)
+       Ausflug
+08:00 |
+}
+
+test render-term-5.5 {-weekStart on a week list: mon fine, sun an error} -body {
+    ::set s [tical::view::week::getData -date 2025-10-14]
+    list [expr {[tical::render::term::print $s -weekStart mon] eq [tical::render::term::print $s]}] \
+         [catch {tical::render::term::print $s -weekStart sun} m o] [dict get $o -errorcode]
+} -result {1 1 {TICAL RENDER WEEKSTART}}
+
+test render-term-5.6 {a weekly series in the week list and the month grid} -setup {
+    ::set old [tical::config::get locale]
+    tical::config::set locale de_DE
+} -body {
+    ::set evs {{summary Sport dtstart 2025-10-07T18:00 rrule {freq WEEKLY byday {TU TH}}}}
+    ::set w [tical::render::term::print [tical::view::week::getData -date 2025-10-14 -tz Europe/Berlin -events $evs]]
+    ::set m [tical::render::term::print [tical::view::month::getData -year 2025 -month 10 -tz Europe/Berlin -events $evs]]
+    list [lrange [split $w \n] 2 4] [lindex [split $m \n] 3]
+} -cleanup {
+    tical::config::set locale $old
+} -result {{{ Di 14 Okt   18:00 Sport} { Mi 15 Okt} { Do 16 Okt   18:00 Sport}} {  6   7*  8   9* 10  11  12}}
 
 cleanupTests

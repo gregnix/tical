@@ -42,4 +42,11 @@ test util-weekstart-1 {weekStartDow} -body {
     lmap v {mon Monday sun SUNDAY} {tical::util::weekStartDow $v}
 } -result {1 1 7 7}
 
+test util-selection-9.1 {a date that does not exist is an error} -body {
+    lmap s {2025-02-30 2025-02-27..2025-02-30 2024-02-29} {
+        catch {tical::util::expandSelection [list $s]} r o
+        expr {[dict exists $o -errorcode] ? [dict get $o -errorcode] : $r}
+    }
+} -result {{TICAL UTIL SELECTION} {TICAL UTIL SELECTION} 2024-02-29}
+
 cleanupTests

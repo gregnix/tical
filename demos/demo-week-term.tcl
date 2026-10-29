@@ -12,6 +12,7 @@ catch {fconfigure stdout -encoding utf-8}    ;# robust UTF-8 output on Tcl 9
 package require tical::config 1.0
 package require tical::view::week 1.0
 package require tical::holidays::de 1.0
+package require tical::render::term 1.1.1
 
 tical::config::set timezone Europe/Berlin
 
@@ -62,6 +63,15 @@ foreach cell [dict get $spec cells] {
 }
 
 puts ""
+puts "4. render::term (week 42 with events):"
+set events {
+    {summary Zahnarzt dtstart 2025-10-13T09:00 dtend 2025-10-13T10:00}
+    {summary "Call New York" dtstart 2025-10-14T09:00 tzid America/New_York}
+    {summary Urlaub dtstart 2025-10-16 dtend 2025-10-18}
+}
+set spec [tical::view::week::getData -year 2025 -week 42 -holidays DE -events $events]
+puts [tical::render::term::print $spec]
+
 puts "Done!"
 
 
